@@ -2,7 +2,7 @@
 
 Comps benchmarks a public company against its peers over several years. You ask a question in plain English ("Compare Nike, Lululemon, and Under Armour's gross margin over the last 5 years"), and a ReAct agent pulls the numbers from SEC filings, does the math in a calculator tool, and answers with every figure cited to its filing. It's built for medium to long-term investors and in-house corporate analysts.
 
-**Live demo:** https://comps-placeholder.up.railway.app *(placeholder, not deployed yet)*
+**Live demo:** https://comps-production-1543.up.railway.app
 
 ## Stack
 
@@ -19,18 +19,18 @@ Requires Node 22.
 
 1. Clone the repo:
    ```bash
-   git clone <repo-url> comps
+   git clone https://github.com/yashkhadilkar/comps.git
    cd comps
    ```
 2. Install dependencies:
    ```bash
    npm install
    ```
-3. Copy the env template and fill in your keys:
+3. Copy the env template and fill in your keys. Teammates: ask Yash for the shared dev keys (sent privately, never in the group chat):
    ```bash
    cp .env.example .env.local
    ```
-4. Run the database migration: open your Supabase project, go to **SQL Editor**, paste the contents of [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql), and run it.
+4. Run the database migration: open your Supabase project, go to **SQL Editor**, paste the contents of [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql), and run it. Skip this if you're using the shared team project, since it's already applied.
 5. Start the dev server:
    ```bash
    npm run dev
@@ -57,9 +57,9 @@ Requires Node 22.
 | Step | Owner |
 |---|---|
 | Step 1: Foundation (Next.js, Supabase auth, database, placeholder API, base UI) | Yash |
-| Step 2 | Pranav |
-| Step 3 | Hans and Pranav |
-| Steps 4 and 5 | Forum and Reyn |
+| Step 2: The ReAct agent and its 4 tools (`lib/agent/`) | Pranav |
+| Step 3: Stripe Pro upgrade and usage limits (`lib/usage.ts`, `lib/stripe.ts`, checkout and webhook routes) | Hans and Pranav |
+| Steps 4 and 5: Frontend polish, QA, write-up, and slides | Forum and Reyn |
 
 Stub files with a comment describing what each one should do are in `lib/agent/`, `lib/usage.ts`, `lib/stripe.ts`, `app/api/checkout/`, and `app/api/stripe/webhook/`.
 
