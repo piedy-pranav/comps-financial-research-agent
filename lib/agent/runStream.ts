@@ -10,7 +10,7 @@ export type RunRecord = {
 };
 
 export type StreamDeps = {
-  run(question: string, onStep: (step: TraceStep) => void): Promise<AgentResult>;
+  run(question: string, onStep: (step: TraceStep) => void, signal: AbortSignal): Promise<AgentResult>;
   save(record: RunRecord): Promise<void>; // should throw on failure
   saveTimeoutMs?: number;
 };
@@ -36,6 +36,7 @@ async function saveBestEffort(deps: StreamDeps, record: RunRecord) {
 export function createAgentStream(question: string, deps: StreamDeps): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let closed = false; // set when the client disconnects or the stream is closed
+  const abort = new AbortController(); // aborted on disconnect so the agent stops spending tokens
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -50,7 +51,7 @@ export function createAgentStream(question: string, deps: StreamDeps): ReadableS
       };
 
       try {
-        const result = await deps.run(question, (step) => send({ type: "step", step }));
+        const result = await deps.run(question, (step) => send({ type: "step", step }), abort.signal);
         // Saved before `final` so the next request already sees this run when usage is counted (Step 3).
         await saveBestEffort(deps, {
           question,
@@ -81,6 +82,7 @@ export function createAgentStream(question: string, deps: StreamDeps): ReadableS
     },
     cancel() {
       closed = true;
+      abort.abort();
     },
   });
 }
