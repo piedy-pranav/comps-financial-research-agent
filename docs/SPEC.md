@@ -175,8 +175,11 @@ Allowed answer kinds:
 - `declined`
 - `off_topic`
 - `insufficient_data`
+- `error` (system-generated only, see below)
 
 Only `answer` maps to run status `success`.
+
+A sixth system-only kind, `error`, is used when the AI service or the server fails (or the run is cancelled). The model is never offered it, so a provider failure is distinguishable from "no data" (`insufficient_data`). It is saved as `failed`.
 
 ### AGENT-006 — Parallel independent work
 Independent tool calls may run in parallel in one iteration.
@@ -236,6 +239,7 @@ When companies change XBRL tags over time, merge period coverage across the orde
 ### TOOL-005 — `calculate`
 All arithmetic is delegated to a restricted calculator tool.
 - never use `eval`
+- only digits, `+ - * / ^`, parentheses and exponent notation are accepted (no `%`, no commas)
 - reject unsafe expressions
 - one bad expression does not fail the whole batch
 - non-finite results are errors
@@ -246,7 +250,7 @@ News is optional explanatory context, not the source of core reported financial 
 Search content is wrapped and explicitly treated as untrusted third-party text.
 
 ### TOOL-007 — Tool timeout + retry
-Each external/tool execution has a timeout. A thrown error or timeout is retried once by the executor. A normal tool-level negative result such as "not found" is not retried as though it were a transport failure.
+Each external/tool execution has a timeout. A thrown error or timeout is retried once by the executor. A normal tool-level negative result such as "not found" is not retried as though it were a transport failure, and neither are errors retrying cannot fix (`NonRetryableError`: bad credentials, missing config, 403/404/401). A timed-out attempt is aborted so the retry does not run alongside it.
 
 ---
 
@@ -284,6 +288,9 @@ The shared `AgentEvent` type is authoritative. Current semantic event sequence:
 
 ### STREAM-003 — No proxy buffering
 Response headers should discourage buffering/caching so trace events appear live.
+
+### STREAM-005 — Client disconnect
+When the client disconnects, the agent run is aborted (no further model or tool calls) and saved once as `failed` with the trace so far.
 
 ### STREAM-004 — Persistence
 After an agent run:
@@ -344,7 +351,7 @@ The user can:
 Structured tables render as HTML tables, not markdown-parsed table text.
 
 ### UI-003 — Source links
-Citation markers link to a numbered source list. SEC sources link to EDGAR filing pages.
+Citation markers link to a numbered source list. SEC sources link to the 10-K document itself on EDGAR (resolved from the SEC submissions API); if that lookup fails they fall back to the filing's EDGAR index page.
 
 ### UI-004 — Non-answer rendering
 Non-answer kinds use a neutral information treatment rather than misleading table/source chrome.

@@ -351,5 +351,43 @@ Closes F1 (Delta on Sonnet). SPEC AGENT-009 and UI-007 added.
 - B4: nothing has been committed. Which files to leave out of the commit is the user's call (candidates: `docs/capstone_team_plan.pdf`, `README_FIRST.md`, `scripts/`).
 - Eval A02 still expects the literal "Assuming you meant"; models write "Assuming you mean", "Matched ... via fuzzy match" or "I assumed". Left as is; decide whether the check should be literal.
 - No eval runner yet (`scripts/run-evals.ts` suggested in `eval/README.md`).
-- Nice to have, not done: N1 (SEC cache growth), N2 (retry of permanent errors), N3 (calculator `%` and `,`), N4 (stale-data flag), N6 (provider failure kind), N7 (route ignores `request.signal`), N8 (trace label), N9 (filing link goes to the EDGAR index page).
+- Nice to have: all done in A5 (N1 to N4, N6 to N9). N5 is a documentation note only (see A5).
 - After the commit and your approval: send `TAVILY_API_KEY` and `SEC_USER_AGENT` to Yash, merge `pranav-dev` to `main`, run the handoff checks on the live URL, record wall-clock on Sonnet (latest: 13 to 20s warm).
+
+### A5. Nice-to-haves N1 to N4, N6 to N9 (2026-10-19, uncommitted, branch `pranav-dev`, on top of commits a220240..a62ba30)
+
+**N1. SEC cache.** `sec.ts`: at most 30 entries, least recently used evicted, the tickers list never evicted. Concurrent callers for the same key now share one request; a failed load is not cached. (Before: unbounded, and 3 parallel lookups fetched the tickers file 3 times.)
+
+**N2. Retries.** New `lib/agent/errors.ts` (`NonRetryableError`). Missing `SEC_USER_AGENT`, SEC 403 and 404, and Tavily 401 and 403 are returned to the model immediately instead of waiting and retrying. `executeTool` aborts a timed-out attempt (an `AbortSignal` is passed to `run`, used by `search_news`) so the retry doesn't run alongside it, and skips work if the run is already cancelled. SPEC TOOL-007 updated.
+
+**N3. Calculator.** `calculate.ts`: `%` and commas removed from the allowed characters (`5 % 0` used to return 5). Overflow error text fixed. SPEC TOOL-005 updated.
+
+**N4. Stale or non-USD data.** `getFinancials.ts`: if a metric's newest annual figure ends more than 460 days ago, the tool note tells the model to say it may not be current (delisted company, or new 10-K missing). If a metric has no USD data but is reported in another currency, the note says so instead of "no data".
+
+**N6. Provider failures.** New system-only answer kind `error` (`types.ts`, SPEC AGENT-005): Anthropic API errors and cancellations return `kind: "error"` (status `failed`), not `insufficient_data`. It is not in the `final_answer` enum, so the model never chooses it. The UI treats it like any non-answer.
+
+**N7. Disconnect cancels the run.** `runStream.ts` aborts an `AbortController` when the client disconnects; `runAgent` takes the signal and stops before the next model call, passes it to the Anthropic request and to tool execution, and returns "Cancelled." The run is saved once as `failed`. Supersedes the A1 note that a disconnected run finishes (and spends tokens) to completion. SPEC STREAM-005 added.
+
+**N8. Trace label.** `agent-trace.tsx`: "Researched in N steps" now counts rounds of the loop, not tool calls.
+
+**N9. Source links.** `sec.ts` `getAnnualFilingDocs` reads the SEC submissions API (cached) to map accession to the 10-K file name; `get_financials` links to the document itself (for example `nke-20260531.htm`). Falls back to the EDGAR index page if the lookup fails (logged, tool still succeeds). SPEC UI-003 updated.
+
+**Tests run**
+- `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass.
+- Offline: `try-infra.ts` (new) 21/21 (cache sharing, failure not cached, bound, tickers kept, LRU; executor non-retryable, ordinary retry, timed-out attempts aborted, cancelled run; calculator; stale and non-USD helpers), `try-stream.ts` 8/8 (adds disconnect abort), `try-loop.ts` 14/14 (adds aborted start and provider failure kind), `try-clarify-ui.ts` 8/8 (adds trace label), `try-grounding.ts` 29/29, `try-news.ts` 6/6.
+- Live: 12 sources across NKE, LULU, UAA, AAPL all link to the 10-K document and return HTTP 200 `text/html`. On Sonnet: real cancellation 6s after start returns `error` "Cancelled." after 9 trace steps; example buttons (12 to 17s), full edge set and Delta clarification unchanged and passing.
+
+**N5 (documentation only).** The fiscal-year label rule (a January or early-February year end belongs to the prior year) matches Lululemon, Home Depot and Target but not Walmart, whose fiscal year ending 2026-01-31 is called fiscal 2026 by the company. The period end is always shown, so the figure is not wrong, but the label can differ from the company's own.
+
+**Findings and remaining risks**
+- **N10 (new, deferred by decision on 2026-10-19):** the source label for a filing uses the latest fiscal year among the values fetched from it, not the filing's own year. Example: the link for "NKE 10-K, FY2023 (ended 2023-05-31)" opens `nke-20250531.htm` (the FY2025 report, which also contains FY2023 figures). The figure is correct, but the label can look wrong next to the document. Fix would use the submissions API `reportDate`.
+- `getAnnualFilingDocs` only sees the recent-filings list; very old 10-Ks fall back to the index page.
+- The browser disconnect check from A1 (check 4) now expects a `failed` row with a partial trace, not a `success` row. Not re-run in the browser.
+- Example question 1 shows 11 sources on Sonnet (9 before I6): the citation repair adds a source per filing.
+
+**Open items after A5**
+- N10: deferred, revisit if the label confuses demo viewers (fix: use `reportDate` from the SEC submissions API).
+- N5: documentation only, nothing to build.
+- Eval A02 literal wording ("Assuming you meant") and an eval runner (`scripts/run-evals.ts`): still open.
+- Step 3 (usage limits and Stripe) is next, following `docs/step3-plan.md`.
+- Merge to `main` and the live-URL handoff checks still need approval.

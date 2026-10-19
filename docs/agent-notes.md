@@ -16,7 +16,7 @@ For Forum and Reyn: write-up material and the contract the frontend builds on. C
 
 - Up to **6 iterations**. Each iteration the model picks tools (several in parallel) or finishes. Every tool call has a required `thought` field, which is what the trace shows.
 - The **last iteration only offers `final_answer`**, so the user gets what was found plus what's missing instead of an error. There's also a 90 second deadline that triggers the same behavior.
-- Tool calls have **timeouts and one retry**. A tool failure goes back to the model as an error result, so it can adjust; it never crashes the run. A tool returning "not found" is a real answer and is not retried.
+- Tool calls have **timeouts and one retry** (not for errors retrying can't fix, like a bad key; a timed-out attempt is aborted). A tool failure goes back to the model as an error result, so it can adjust; it never crashes the run. A tool returning "not found" is a real answer and is not retried.
 - If the model can't answer, the **"not enough data" fallback** (`kind: insufficient_data`) says what was found and what's missing.
 - Model, prompt and tool schemas are fixed per request, and the system prompt and tool definitions use **prompt caching**, so later iterations are cheap. Model comes from `LLM_MODEL`.
 
@@ -66,3 +66,5 @@ Only `kind: "answer"` runs are saved as `success` and count toward usage. Clarif
 - `lookup_ticker` fuzzy matching is stricter than first planned (Fuse threshold 0.25), because 0.4 matched "Adidas" to "Radian Group".
 - `get_financials` also tries `InventoryFinishedGoodsNetOfReserves` for inventory, because Nike doesn't use `InventoryNet` after 2011.
 - Test scripts are in `scripts/` (`npx tsx --env-file=.env.local scripts/try-agent.ts "question"`).
+
+Also: if the user disconnects mid-run the agent is cancelled and saved as `failed`. `kind: "error"` means the AI service or server failed (shown like other non-answers). Source links go to the 10-K document itself.
