@@ -33,12 +33,13 @@ function toRows(steps: TraceStep[]): Row[] {
 export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: boolean }) {
   if (!steps.length && !loading) return null;
   const rows = toRows(steps);
-  const actionCount = rows.filter((r) => r.kind === "action").length;
+  // A "step" is one round of the agent loop (it may run several tools at once), not a single tool call.
+  const stepCount = new Set(steps.filter((s) => s.type === "action").map((s) => s.iteration)).size;
 
   return (
     <details open={loading} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <summary className="cursor-pointer text-sm font-medium text-slate-700">
-        {loading ? "Researching…" : `Researched in ${actionCount} step${actionCount === 1 ? "" : "s"}`}
+        {loading ? "Researching…" : `Researched in ${stepCount} step${stepCount === 1 ? "" : "s"}`}
       </summary>
       <ol className="mt-3 space-y-2 text-sm">
         {rows.map((row, i) => {
