@@ -50,6 +50,7 @@ export type ToolDef<I = any> = {
   name: Exclude<ToolName, "final_answer">;
   definition: Anthropic.Beta.BetaTool;
   label(input: I): string;
-  run(input: I, ctx: ToolContext): Promise<ToolResult>;
+  // `signal` fires when the attempt times out or the user disconnects; tools with their own fetch should honor it.
+  run(input: I, ctx: ToolContext, signal?: AbortSignal): Promise<ToolResult>;
   timeoutMs: number;
 };

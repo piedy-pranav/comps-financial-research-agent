@@ -67,7 +67,8 @@ function failedResult(kind: AnswerKind, message: string, trace: TraceStep[]): Ag
   return { status: "failed", answer, trace };
 }
 
-function userFacingApiError(err: unknown): string {
+function userFacingApiError(err: unknown, cancelled: boolean): string {
+  if (cancelled) return "Cancelled.";
   if (err instanceof Anthropic.RateLimitError) return "Comps is busy right now. Please try again in a minute.";
   if (err instanceof Anthropic.AuthenticationError) {
     console.error("[agent] Anthropic authentication failed. Check ANTHROPIC_API_KEY.");
@@ -86,6 +87,7 @@ async function callModel(
   messages: Anthropic.Beta.BetaMessageParam[],
   tools: Anthropic.Beta.BetaTool[],
   timeoutMs: number,
+  signal?: AbortSignal,
 ) {
   const isSonnet = model.startsWith("claude-sonnet-5-5");
   const response = await getClient().beta.messages.create({
@@ -98,7 +100,7 @@ async function callModel(
     output_config: { effort: "medium" },
     // Refusal fallback is Sonnet-only; Haiku has no server-side fallback.
     ...(isSonnet ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
-  } as Anthropic.Beta.MessageCreateParamsNonStreaming, { timeout: timeoutMs, maxRetries: 1 });
+  } as Anthropic.Beta.MessageCreateParamsNonStreaming, { timeout: timeoutMs, maxRetries: 1, signal });
 
   if (process.env.NODE_ENV !== "production") {
     const u = response.usage;
@@ -112,6 +114,7 @@ async function callModel(
 export async function runAgent(
   question: string,
   onStep: (step: TraceStep) => void,
+  signal?: AbortSignal, // aborted when the user disconnects: stop spending tokens
 ): Promise<AgentResult> {
   const model = process.env.LLM_MODEL || DEFAULT_MODEL;
   const ctx = createToolContext();
@@ -133,6 +136,7 @@ export async function runAgent(
   let nudged = false;
 
   for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
+    if (signal?.aborted) return failedResult("error", "Cancelled.", trace);
     const lastStep = iteration === MAX_ITERATIONS || Date.now() - start > DEADLINE_MS;
     const tools = lastStep ? [FINAL_ANSWER_TOOL] : ALL_TOOL_DEFINITIONS;
     if (lastStep) {
@@ -154,9 +158,9 @@ export async function runAgent(
 
     let response: Anthropic.Beta.BetaMessage;
     try {
-      response = await callModel(model, messages, tools, callTimeout);
+      response = await callModel(model, messages, tools, callTimeout, signal);
     } catch (err) {
-      return failedResult("insufficient_data", userFacingApiError(err), trace);
+      return failedResult("error", userFacingApiError(err, !!signal?.aborted), trace);
     }
     // Keep the full content (including thinking blocks) unchanged for the next request.
     messages.push({ role: "assistant", content: response.content });
@@ -238,7 +242,7 @@ export async function runAgent(
 
     // Tools that outlive the budget are reported to the model as failed so the final call still has time.
     const budget = toolPhaseBudgetMs(Date.now() - start);
-    const results = await Promise.all(toolUses.map((t) => withBudget(executeTool(t.name, t.input, ctx), budget)));
+    const results = await Promise.all(toolUses.map((t) => withBudget(executeTool(t.name, t.input, ctx, signal), budget)));
 
     const toolResultBlocks: Anthropic.Beta.BetaToolResultBlockParam[] = toolUses.map((t, i) => {
       const r = results[i];

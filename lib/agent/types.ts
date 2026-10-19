@@ -27,7 +27,8 @@ export type AnswerKind =
   | "not_covered" // company not an SEC filer (e.g. Adidas) or not found
   | "declined" // buy/sell or price prediction request
   | "off_topic"
-  | "insufficient_data";
+  | "insufficient_data"
+  | "error"; // system-generated only: the AI service or server failed. Never offered to the model
 
 export type Source =
   | {

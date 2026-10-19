@@ -3,7 +3,7 @@
 // Gotcha: in companyfacts, `fy`/`fp` describe the FILING, not the data point. A FY2024 10-K
 // also reports FY2023 and FY2022 values, all tagged fy=2024. So we dedupe by period END date
 // and derive the fiscal year label from that date instead.
-import { filingUrl, findByTicker, getCompanyFacts, type XbrlFact } from "../sec";
+import { filingUrl, findByTicker, getAnnualFilingDocs, getCompanyFacts, type XbrlFact } from "../sec";
 import type { ToolDef } from "./types";
 
 export const METRICS = [
@@ -57,8 +57,28 @@ export function formatMoney(v: number): string {
 
 const isAnnualForm = (f: XbrlFact) => f.form === "10-K" || f.form === "10-K/A";
 
-function usdFacts(facts: Record<string, { units: Record<string, XbrlFact[]> }>, tag: string) {
+type GaapFacts = Record<string, { units: Record<string, XbrlFact[]> }>;
+
+function usdFacts(facts: GaapFacts, tag: string) {
   return facts?.[tag]?.units?.USD ?? [];
+}
+
+// Non-USD units a metric's tags are reported in, so "no data" is not confused with "not in dollars".
+export function nonUsdUnits(facts: GaapFacts, tags: string[]): string[] {
+  const units = new Set<string>();
+  for (const tag of tags) {
+    for (const unit of Object.keys(facts?.[tag]?.units ?? {})) if (unit !== "USD") units.add(unit);
+  }
+  return [...units];
+}
+
+const STALE_AFTER_DAYS = 460; // a little over 15 months: the next annual report is overdue
+
+// Flags a company whose newest annual figure is old (delisted, stopped filing, or the new 10-K is not in the data).
+export function staleNote(latestEnd: string, now = Date.now()): string | undefined {
+  const ageDays = Math.floor((now - Date.parse(latestEnd)) / DAY_MS);
+  if (ageDays <= STALE_AFTER_DAYS) return undefined;
+  return `The latest annual figure here ends ${latestEnd}, over 15 months ago. The company may no longer file, or its newest 10-K is not in the data. Say so; do not present this as current.`;
 }
 
 // period end -> best (latest filed) annual duration fact for one tag
@@ -137,7 +157,14 @@ export const getFinancials: ToolDef<Input> = {
       };
     }
 
-    const all = await getCompanyFacts(company.cik);
+    // The 10-K document file names (best effort): without them, sources link to the EDGAR index page.
+    const [all, filingDocs] = await Promise.all([
+      getCompanyFacts(company.cik),
+      getAnnualFilingDocs(company.cik).catch((err) => {
+        console.error("[get_financials] filing document lookup failed:", err instanceof Error ? err.message : err);
+        return new Map<string, string>();
+      }),
+    ]);
     const usGaap = all.facts?.["us-gaap"];
     if (!usGaap) {
       return {
@@ -201,7 +228,7 @@ export const getFinancials: ToolDef<Input> = {
           periodEnd: v.periodEnd,
           filed: v.filed,
           accession: v.citationKey,
-          url: filingUrl(company.cik, v.citationKey),
+          url: filingUrl(company.cik, v.citationKey, filingDocs.get(v.citationKey)),
         });
       }
 
@@ -214,7 +241,10 @@ export const getFinancials: ToolDef<Input> = {
       }
 
       let note: string | undefined;
-      if (!values.length) {
+      const otherUnits = values.length ? [] : nonUsdUnits(usGaap, TAGS[metric]);
+      if (!values.length && otherUnits.length) {
+        note = `This company reports ${metric.replace(/_/g, " ")} in ${otherUnits.join(", ")}, not USD. Only USD figures are supported; say so.`;
+      } else if (!values.length) {
         note =
           metric === "gross_profit"
             ? "No GrossProfit tag reported. Fetch revenue and cost_of_revenue and compute gross profit with calculate."
@@ -226,6 +256,9 @@ export const getFinancials: ToolDef<Input> = {
       } else if (missingFiscalYears.length) {
         note = `Fiscal year(s) ${missingFiscalYears.join(", ")} missing: often a change in fiscal year end (transition period) or a gap in the company's filings.`;
       }
+
+      const stale = values.length ? staleNote(values[0].periodEnd) : undefined;
+      if (stale) note = note ? `${note} ${stale}` : stale;
 
       return { metric, values, missingFiscalYears, ...(note ? { note } : {}) };
     });

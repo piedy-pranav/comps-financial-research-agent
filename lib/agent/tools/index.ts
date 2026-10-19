@@ -1,6 +1,7 @@
 // Tool registry, executor (timeout + one retry), citation registry, and final_answer handling.
 import type Anthropic from "@anthropic-ai/sdk";
 import { rewriteQuestion } from "../clarify";
+import { NonRetryableError } from "../errors";
 import type { AnswerKind, Clarification, FinalAnswer, Source, ToolName } from "../types";
 import { calculate } from "./calculate";
 import { getFinancials } from "./getFinancials";
@@ -131,17 +132,27 @@ export function createToolContext(): ToolContext {
   return ctx;
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(run: (signal: AbortSignal) => Promise<T>, ms: number, outer?: AbortSignal): Promise<T> {
+  const attempt = new AbortController();
+  const signal = outer ? AbortSignal.any([attempt.signal, outer]) : attempt.signal;
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${Math.round(ms / 1000)}s`)), ms);
+    timer = setTimeout(() => {
+      attempt.abort(); // stop the timed-out work so a retry does not run alongside it
+      reject(new Error(`timed out after ${Math.round(ms / 1000)}s`));
+    }, ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([run(signal), timeout]).finally(() => clearTimeout(timer));
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function executeTool(name: string, input: unknown, ctx: ToolContext): Promise<ToolResult> {
+export async function executeTool(
+  name: string,
+  input: unknown,
+  ctx: ToolContext,
+  signal?: AbortSignal,
+): Promise<ToolResult> {
   const def = BY_NAME.get(name);
   if (!def) return { ok: false, error: `Unknown tool: ${name}` };
   if (!input || typeof input !== "object") return { ok: false, error: "Tool input must be an object." };
@@ -160,11 +171,14 @@ export async function executeTool(name: string, input: unknown, ctx: ToolContext
 
   let lastError = "unknown error";
   for (let attempt = 1; attempt <= 2; attempt++) {
+    if (signal?.aborted) return { ok: false, error: `${name} was cancelled.` };
     try {
       // A tool returning { ok: false } is a real answer ("not found"), so it is not retried.
-      return await withTimeout(def.run(input, ctx), def.timeoutMs);
+      return await withTimeout((s) => def.run(input, ctx, s), def.timeoutMs, signal);
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
+      // Bad credentials, missing config and "not found" will fail the same way again: report them now.
+      if (err instanceof NonRetryableError) return { ok: false, error: `${name} failed: ${lastError}` };
       if (attempt === 1) await sleep(500);
     }
   }

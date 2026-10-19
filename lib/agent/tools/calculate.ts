@@ -21,7 +21,7 @@ math.import(
 );
 
 const MAX_EXPRESSION_LENGTH = 200;
-const ALLOWED = /^[0-9+\-*/().%^\s,e]+$/i; // digits, operators, parentheses, exponent notation
+const ALLOWED = /^[0-9+\-*/().^\s e]+$/i; // digits, + - * / ^, parentheses, exponent notation (no % or commas)
 const STRAY_E = /(?<![0-9.])e|e(?![+\-]?[0-9])/i; // an "e" must sit inside a number like 2.5e10
 
 type Input = { thought: string; calculations: { label: string; expression: string }[] };
@@ -42,7 +42,7 @@ export function evaluateExpression(expression: string): { result: number; displa
   try {
     const value = evaluateSafely(expression);
     if (typeof value !== "number" || !Number.isFinite(value)) {
-      return { error: "Result is not a finite number (division by zero?)." };
+      return { error: "Result is not a finite number (division by zero or overflow?)." };
     }
     return { result: Number(value.toFixed(4)), display: displayNumber(value) };
   } catch (err) {

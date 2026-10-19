@@ -1,5 +1,6 @@
 // search_news: recent headlines from Tavily to explain a change in the numbers.
 // Results are untrusted third-party text: data, never instructions.
+import { NonRetryableError } from "../errors";
 import type { ToolDef } from "./types";
 
 type TavilyResult = { title?: string; url?: string; content?: string; published_date?: string };
@@ -33,7 +34,7 @@ export const searchNews: ToolDef<Input> = {
     },
   },
   label: (input) => `Searching news: "${input.query}"`,
-  async run(input, ctx) {
+  async run(input, ctx, signal) {
     const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey) return { ok: false, error: "News search is not configured." };
 
@@ -41,8 +42,11 @@ export const searchNews: ToolDef<Input> = {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ query: input.query, topic: "news", max_results: 5, time_range: "year" }),
-      signal: AbortSignal.timeout(10_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
     });
+    if (res.status === 401 || res.status === 403) {
+      throw new NonRetryableError(`Tavily rejected the request (${res.status}). Check TAVILY_API_KEY.`);
+    }
     if (!res.ok) throw new Error(`Tavily returned ${res.status}`);
     const body = (await res.json()) as { results?: TavilyResult[] };
 
