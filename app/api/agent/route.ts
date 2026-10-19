@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
+import { runAgent } from "@/lib/agent/loop";
+import { createAgentStream } from "@/lib/agent/runStream";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { validateQuestion } from "@/lib/validation";
 
-// PLACEHOLDER (Step 1). Proves auth, validation, and the runs table are wired up.
-// Step 2 replaces the dummy answer with: usage check (lib/usage.ts), the ReAct
-// loop (lib/agent/loop.ts), a streamed trace, and saving 'failed' runs too.
+// Agent runs can take 30 to 60 seconds.
+export const maxDuration = 120;
+
+// Streams NDJSON (one AgentEvent per line): "step" events while the agent works, then one
+// "final" event (or "error"). Auth and validation errors are plain JSON with a status code,
+// returned before any streaming starts.
 export async function POST(request: Request) {
   try {
+    // getCurrentUser reads cookies, so call it before the stream is created.
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Please log in to ask a question." }, { status: 401 });
@@ -29,24 +35,27 @@ export async function POST(request: Request) {
     }
     const { question } = validation;
 
-    const answer =
-      "This is a placeholder answer. The Comps agent isn't connected yet, so no SEC data was used. " +
-      `Your question was saved: "${question}"`;
-    const trace: unknown[] = [];
+    // TODO(step 3): const usage = await checkUsage(user.id);
+    // if (!usage.allowed) return NextResponse.json({ error: usage.message, code: usage.code }, { status: 402 });
 
-    const { error: dbError } = await createAdminClient()
-      .from("runs")
-      .insert({ user_id: user.id, question, answer, trace, status: "success" });
+    const stream = createAgentStream(question, {
+      run: runAgent,
+      save: async (record) => {
+        // createAdminClient throws if env vars are missing; createAgentStream treats that as a failed save.
+        const { error } = await createAdminClient()
+          .from("runs")
+          .insert({ user_id: user.id, ...record });
+        if (error) throw new Error(error.message);
+      },
+    });
 
-    if (dbError) {
-      console.error("[api/agent] failed to save run:", dbError.message);
-      return NextResponse.json(
-        { error: "We couldn't save your question. Please try again." },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ answer, trace });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (err) {
     console.error("[api/agent]", err);
     return NextResponse.json(
