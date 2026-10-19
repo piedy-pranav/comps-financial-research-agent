@@ -69,6 +69,28 @@ async function main() {
   await new Promise((r) => setTimeout(r, 100));
   check("disconnect: saved once as success", discSaves.length === 1 && discSaves[0].status === "success", discSaves);
 
+  // 7. Client disconnects mid-run (N7): the agent is told to stop, and the run is saved once as failed
+  const abortSaves: RunRecord[] = [];
+  let sawAbort = false;
+  let release2!: () => void;
+  const gate2 = new Promise<void>((r) => (release2 = r));
+  const stream2 = createAgentStream("q", {
+    run: async (_q, onStep, signal) => {
+      onStep(step);
+      await gate2;
+      sawAbort = signal.aborted;
+      return { ...result, status: "failed", answer: { ...result.answer, kind: "error", answerMarkdown: "Cancelled." } };
+    },
+    save: async (r) => void abortSaves.push(r),
+  });
+  const reader2 = stream2.getReader();
+  await reader2.read();
+  await reader2.cancel();
+  release2();
+  await new Promise((r) => setTimeout(r, 100));
+  check("disconnect aborts the run's signal", sawAbort, sawAbort);
+  check("aborted run saved once as failed", abortSaves.length === 1 && abortSaves[0].status === "failed", abortSaves);
+
   process.exit(failures ? 1 : 0);
 }
 main();

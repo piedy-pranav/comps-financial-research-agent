@@ -7,9 +7,16 @@ import { modelCallTimeoutMs, runAgent, toolPhaseBudgetMs } from "../lib/agent/lo
 type Reply = { content: unknown[]; stop_reason: string };
 let calls: { tools: string[] }[] = [];
 let script: Reply[] = [];
+let failStatus = 0; // when set, the mocked endpoint answers with this HTTP error
 
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (!String(input).includes("/v1/messages")) throw new Error(`unexpected fetch ${String(input)}`);
+  if (failStatus) {
+    return new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), {
+      status: failStatus,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const body = JSON.parse(String(init?.body));
   calls.push({ tools: (body.tools ?? []).map((t: { name: string }) => t.name) });
   const reply = script[Math.min(calls.length - 1, script.length - 1)];
@@ -62,6 +69,19 @@ async function main() {
   calls = [];
   r = await runAgent("poem", () => { throw new Error("listener boom"); });
   check("throwing onStep does not stop the run", r.answer.kind === "off_topic", r);
+
+  // N7: an aborted signal stops the run before any model call
+  calls = [];
+  const ac = new AbortController();
+  ac.abort();
+  r = await runAgent("q", () => {}, ac.signal);
+  check("aborted before start: no model call, kind error", calls.length === 0 && r.status === "failed" && r.answer.kind === "error", { calls: calls.length, r });
+
+  // N6: a provider failure is kind "error", not "insufficient_data"
+  failStatus = 401;
+  r = await runAgent("q", () => {});
+  check("provider failure -> kind error with a plain message", r.status === "failed" && r.answer.kind === "error" && r.answer.answerMarkdown.includes("isn't configured"), r);
+  failStatus = 0;
 
   // I3: time budgets
   check("model call timeout is 60s early", modelCallTimeoutMs(0) === 60_000, modelCallTimeoutMs(0));
