@@ -489,7 +489,7 @@ Source of truth: `docs/RESEARCH_HISTORY_PLAN.md` (HIST-001 to HIST-007). Read-si
 
 **Remaining risks**: the browser checks above; `status` only has `success|failed`, so the label depends on `trace.answer.kind` and legacy failed rows show "Error"; very old rows with a differing `trace.steps` shape lose their trace (answer text still shows).
 
-### A9. Live Stripe test-mode checkout, local (2026-10-19, branch `pranav-dev`)
+### A12. Live Stripe test-mode checkout, local (2026-10-19, branch `pranav-dev`)
 - Setup: Stripe sandbox account, real `sk_test_` key and CLI-issued `whsec_` in `.env.local`. The current CLI requires named events, so the forwarder is `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded --forward-to localhost:3000/api/stripe/webhook`.
 - Result (manual run by Pranav, with a second non-test account): entered a Stripe test card, completed checkout, the account became Pro with the 25-per-day allowance, and the `stripe listen` terminal showed the webhook delivered successfully. This closes the main "live checkout" item from A7 locally.
 - Still open: cancelled-checkout path, webhook replay (`stripe events resend`), the real-database 402 at the Free limit, plan persistence after logout/login, and everything on the deployed Railway URL (needs a dashboard webhook endpoint with its own signing secret). Update this entry as each is verified.
@@ -515,13 +515,13 @@ UI-only change. No agent, usage, Stripe, schema or API code touched.
 
 Not implemented. Finding recorded so it is not lost: `lib/usage.ts` `countSuccessfulRuns` counts `runs` rows with `status = 'success'` (Free: all time, Pro: since UTC midnight), so hard-deleting a run would refund quota, and `runs` has no DELETE policy for `authenticated` (`001_init.sql` revokes it). Proposed approach, pending approval and a Supabase migration run by a teammate: add a nullable `runs.deleted_at`, have delete set it server-side for the caller's own row, filter it out of History queries, and keep counting it for usage. Needs a `docs/DESIGN.md` note when built.
 
-### A10. Further manual Stripe checks, local (2026-10-19, branch `pranav-dev`)
+### A13. Further manual Stripe checks, local (2026-10-19, branch `pranav-dev`)
 Verified by Pranav by hand against the local app with Stripe test mode:
 - Pro plan persists across log out and log in.
 - Cancelled checkout (clicked Upgrade, reached the Stripe page, returned without paying): plan stayed Free and the limits still applied.
 - Failed or declined payment was not tested; accepted for now because Stripe is simulated in test mode. The server logic for it is covered offline (only a verified, paid `checkout.session.completed` upgrades).
 
-Closed from A9's open list: logout/login persistence, cancel path. Still open locally: webhook replay (`stripe events resend`), and the real-database 402 at the Free limit.
+Closed from A12's open list: logout/login persistence, cancel path. Still open locally: webhook replay (`stripe events resend`), and the real-database 402 at the Free limit.
 
 **PENDING after merge and deploy (cannot be checked until then)**
 Branch `pranav-dev` must first be merged with Yash's `main` (merge to `main` auto-deploys to Railway, so it needs explicit approval). Then Yash creates the keys and adds them to Railway. After that, check on the deployed URL:
