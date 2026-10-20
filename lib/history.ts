@@ -17,7 +17,7 @@ type ListRecord = { id: string; title: string; created_at: string; updated_at: s
 
 // Threads, most recently active first. The run count comes from an embedded count, so no trace is downloaded.
 // Threads with no saved run (created, then the request died before saving) are not listed.
-export async function listThreads(userId: string): Promise<{ ok: true; rows: ThreadRow[] } | { ok: false }> {
+export async function listThreads(userId: string, limit = HISTORY_LIMIT): Promise<{ ok: true; rows: ThreadRow[] } | { ok: false }> {
   try {
     const supabase = await createClient();
     const { data, error } = await supabase
@@ -25,7 +25,7 @@ export async function listThreads(userId: string): Promise<{ ok: true; rows: Thr
       .select("id, title, created_at, updated_at, runs(count)")
       .eq("user_id", userId)
       .order("updated_at", { ascending: false })
-      .limit(HISTORY_LIMIT)
+      .limit(limit)
       .returns<ListRecord[]>();
     if (error) throw new Error(error.message);
     return {

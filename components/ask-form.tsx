@@ -8,7 +8,7 @@ import type { ThreadDetail } from "@/lib/history";
 import type { UsageDenial } from "@/lib/usage-types";
 import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
 import { validateQuestion } from "@/lib/validation";
-import { NEW_QUESTION_EVENT } from "./layout/events";
+import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "./layout/events";
 import { AgentTrace } from "./agent-trace";
 import { AnswerView } from "./answer-view";
 import { SavedTime } from "./history/saved-time";
@@ -16,6 +16,7 @@ import { ExampleQuestions } from "./research/example-questions";
 import { QuestionComposer } from "./research/question-composer";
 import { QuestionHeader } from "./research/question-header";
 import { StatePanel } from "./research/state-panel";
+import { useFollowScroll } from "./research/use-follow-scroll";
 
 const EXAMPLES = [
   "Compare Nike, Lululemon, and Under Armour's gross margin over the last 5 years",
@@ -34,6 +35,8 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   // turn has become a saved one and is hidden (derived, so no effect or duplicate).
   const [liveBase, setLiveBase] = useState(0);
   const liveRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef(initialThread?.title ?? ""); // thread title for the sidebar (the first question of a new thread)
   const [draft, setDraft] = useState(""); // what is typed in the composer
   const [asked, setAsked] = useState<string | null>(null); // the question being researched
   const [loading, setLoading] = useState(false);
@@ -44,6 +47,8 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   const [steps, setSteps] = useState<TraceStep[]>([]);
   const [result, setResult] = useState<AgentResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const follow = useFollowScroll(contentRef, loading || result !== null);
 
   async function ask(raw: string) {
     const validation = validateQuestion(raw);
@@ -65,6 +70,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     setSteps([]);
     setResult(null);
     if (!initialThread) window.scrollTo({ top: 0 });
+    follow(); // follow the new research as it grows, until the reader scrolls up
 
     try {
       const res = await fetch("/api/agent", {
@@ -88,7 +94,14 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
 
       // Follow-ups from here on belong to this thread (set by the server for new conversations).
       const returnedThread = res.headers.get("x-thread-id");
-      if (returnedThread) setThreadId(returnedThread);
+      if (returnedThread) {
+        setThreadId(returnedThread);
+        // Sidebar: show a new thread (or move a continued one to the top) now that the server has accepted the question.
+        if (!threadId) titleRef.current = validation.question.slice(0, 120);
+        window.dispatchEvent(
+          new CustomEvent<ThreadActivity>(THREAD_ACTIVITY_EVENT, { detail: { id: returnedThread, title: titleRef.current } }),
+        );
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -142,6 +155,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     abortRef.current?.abort();
     abortRef.current = null;
     setThreadId(null); // "New question" always starts a new thread
+    titleRef.current = "";
     setDraft("");
     setAsked(null);
     setLoading(false);
@@ -164,7 +178,8 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   const liveVisible = started && (!initialThread || turns.length === liveBase);
 
   useEffect(() => {
-    if (initialThread && asked) liveRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    // Jump (not animate) so the follow-scroll sees a settled position; the hook then tracks growth.
+    if (initialThread && asked) liveRef.current?.scrollIntoView({ block: "start" });
   }, [initialThread, asked]);
 
   if (!started && !initialThread) {
@@ -223,7 +238,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="mx-auto w-full max-w-(--answer-max) flex-1 px-4 pb-10 pt-8 sm:px-6 sm:pt-10">
+      <div ref={contentRef} className="mx-auto w-full max-w-(--answer-max) flex-1 px-4 pb-10 pt-8 sm:px-6 sm:pt-10">
         {initialThread && (
           <>
             <Link href="/history" className="text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink">

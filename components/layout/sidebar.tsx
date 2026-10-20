@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { HistoryIcon, PlusIcon, SidebarIcon, TagIcon } from "@/components/ui/icons";
-import { NEW_QUESTION_EVENT } from "./events";
+import type { ThreadRow } from "@/lib/history-parse";
+import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "./events";
 
 const itemClass = (active: boolean) =>
   `flex h-10 w-10 items-center justify-center rounded-md transition-colors duration-150 ${
@@ -75,8 +76,71 @@ const rowClass = (active: boolean, collapsed: boolean) =>
     collapsed ? "w-10 justify-center" : "w-full gap-3 px-3"
   } ${active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"}`;
 
+export type RecentThreads = { ok: true; rows: ThreadRow[] } | { ok: false } | null;
+
+// "Recent research": the user's latest threads (server-loaded, RLS-scoped) plus any thread touched in this session,
+// which is shown first right away. A touched thread replaces its server row, so nothing appears twice.
+function RecentList({ recent, pathname }: { recent: RecentThreads; pathname: string }) {
+  const [touched, setTouched] = useState<ThreadActivity[]>([]);
+
+  useEffect(() => {
+    const onActivity = (e: Event) => {
+      const t = (e as CustomEvent<ThreadActivity>).detail;
+      if (t?.id) setTouched((prev) => [t, ...prev.filter((p) => p.id !== t.id)]);
+    };
+    window.addEventListener(THREAD_ACTIVITY_EVENT, onActivity);
+    return () => window.removeEventListener(THREAD_ACTIVITY_EVENT, onActivity);
+  }, []);
+
+  const items = useMemo(() => {
+    const server = recent && recent.ok ? recent.rows : [];
+    const ids = new Set(touched.map((t) => t.id));
+    return [...touched.map((t) => ({ id: t.id, title: t.title })), ...server.filter((r) => !ids.has(r.id))];
+  }, [recent, touched]);
+
+  if (!recent) return null;
+  return (
+    <section aria-label="Recent research" className="mt-4 flex min-h-0 flex-1 flex-col">
+      <h2 className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-4">Recent research</h2>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {!recent.ok && items.length === 0 ? (
+          <p className="px-3 py-1.5 text-xs text-ink-4">Couldn&rsquo;t load recent research.</p>
+        ) : items.length === 0 ? (
+          <p className="px-3 py-1.5 text-xs text-ink-4">No research yet.</p>
+        ) : (
+          <ul>
+            {items.map((t) => {
+              const active = pathname === `/history/${t.id}`;
+              return (
+                <li key={t.id}>
+                  <Link
+                    href={`/history/${t.id}`}
+                    title={t.title}
+                    aria-current={active ? "page" : undefined}
+                    className={`block truncate rounded-md px-3 py-1.5 text-[13px] leading-5 transition-colors duration-150 ${
+                      active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"
+                    }`}
+                  >
+                    {t.title}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <Link
+        href="/history"
+        className="mt-1 block px-3 py-1.5 text-xs text-ink-4 transition-colors duration-150 hover:text-ink-2"
+      >
+        View all history
+      </Link>
+    </section>
+  );
+}
+
 // Desktop sidebar. Only real destinations: no placeholders.
-export function Sidebar({ userId }: { userId?: string | null }) {
+export function Sidebar({ userId, recent = null }: { userId?: string | null; recent?: RecentThreads }) {
   const { pathname, newQuestion } = useNav();
   const { collapsed, toggle } = useCollapsed(userId);
   const items = [
@@ -114,7 +178,7 @@ export function Sidebar({ userId }: { userId?: string | null }) {
           {!collapsed && "New question"}
         </button>
         {items.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active = item.href === "/history" ? pathname === "/history" : pathname.startsWith(item.href); // a thread highlights itself in Recent research
           return (
             <Link
               key={item.href}
@@ -130,6 +194,7 @@ export function Sidebar({ userId }: { userId?: string | null }) {
           );
         })}
       </nav>
+      {!collapsed && <RecentList recent={recent} pathname={pathname} />}
     </aside>
   );
 }
