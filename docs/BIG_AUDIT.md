@@ -458,3 +458,33 @@ Requirements: AUTH-002, PLAN-001 to PLAN-005, PAY-001 to PAY-008, SEC-003, UI-00
 - `UNLIMITED_USER_EMAILS` (comma-separated, server env only) exempts matching accounts from limits. `checkUsage` matches it against the email stored in `profiles`, never a browser value; unset means no exemptions, so production is unaffected unless someone sets it on Railway. Badge shows "unlimited". Added to `.env.example`; `try-usage.ts` now 18/18.
 - Created `test@ucla.edu` in the dev Supabase project (email pre-confirmed) and set it in the local `.env.local` only. The password is not stored in the repo.
 - Finding: the checkout button fails locally because `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in `.env.local` are still the `.env.example` placeholders.
+
+### A9. Research History (2026-10-19, branch `pranav-dev`, not merged)
+
+Source of truth: `docs/RESEARCH_HISTORY_PLAN.md` (HIST-001 to HIST-007). Read-side feature over the existing `runs` table. Agent loop, prompts, tools, citations, Stripe, usage limits, NDJSON streaming and the schema were not touched.
+
+**Behavior**
+- `/history`: signed-in user's 50 newest runs, newest first, grouped Today / Yesterday / Earlier by the viewer's local day. Rows show the question, a status label from the saved `trace.answer.kind` (Answer, Declined, Clarification, Not covered, Off topic, Incomplete, Error; legacy rows fall back to Answer for success and Error for failed) and the time. Empty state ("No research yet" with Start researching) and load-error state (generic message, Try again link; raw Supabase errors are only logged).
+- `/history/[id]`: question, "Asked <date> · <time>", the saved trace as a collapsed "Researched in N steps" (`AgentTrace` with `loading={false}`), then the saved `trace.answer` through the existing `AnswerView` (prose, tables, citation markers, notes, sources). A missing id, an invalid id and another user's id all show the same "Research not found" panel.
+- Sidebar and mobile nav: History between New question and Pricing, with the same active styling.
+- Legacy or malformed `trace` (string, array, null answer, wrong kind, bad steps): `parsePersistedRun` validates and sanitizes (drops non-http source URLs, bad tables and bad steps) and otherwise rebuilds a plain answer from `runs.answer`, with a note that only text is available. It never parses prose into tables.
+- Follow-ups are omitted on saved results for v1 (`AnswerView` `onAsk` is now optional: no follow-ups, clarification buttons or Try again when absent). Live behavior is unchanged because `AskForm` still passes `onAsk`.
+
+**Migration needed: no.** The existing RLS policy "Users can read their own runs" and the `(user_id, created_at desc)` index are sufficient. Reads use the cookie-scoped client (`lib/supabase/server.ts`), never the admin key, plus an explicit `user_id` filter as a second layer. The list selects `kind:trace->answer->>kind` so it never downloads whole traces.
+
+**Files changed**: `lib/history-parse.ts` (new, pure parsing/labels/grouping), `lib/history.ts` (new, server-only queries), `app/history/page.tsx`, `app/history/[id]/page.tsx`, `components/history/history-list.tsx`, `saved-time.tsx`, `use-hydrated.ts` (new), `components/layout/sidebar.tsx`, `components/ui/icons.tsx` (HistoryIcon), `components/answer-view.tsx` (optional `onAsk`), `components/agent-trace.tsx` (a finished trace shows an unfinished action as a muted dash, "Not completed", instead of a spinner), `scripts/try-history.ts`, `scripts/try-history-live.mjs` (new). `proxy.ts` needed no change: `/history` is not public, so logged-out users are redirected to `/login`.
+
+**Tests run**
+- `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass (baseline was also green before edits).
+- `npx tsx scripts/try-history.ts`: 24/24 (structured answer, table/source/step sanitizing, 7 legacy shapes, labels, grouping incl. month boundary).
+- `node scripts/try-history-live.mjs` (dev Supabase + `next start -p 3100`, two temporary users deleted afterwards, 0 leftover rows): 30/30. Logged-out redirects; A sees exactly own 6 rows newest first; A cannot read B's run via RLS or via `/history/<B id>` (same "not found", no B text in the response); invalid/unknown ids safe; detail contains table title, note, SEC link, "Researched in 2 steps", "Not completed"; no "Researching" or follow-ups; declined, legacy-string, legacy-array and crash rows render; run count for the user is unchanged after opening history; `limit(50)` caps a 55-row user; Pricing and `/` still 200.
+- Regressions: `try-stream` and `try-clarify-ui` pass; `try-usage` unchanged.
+- No agent, SEC or Tavily code is imported by the history path; the only usage code involved is `AppShell`'s existing read-only `checkUsage` for the badge.
+
+**Browser checks: NOT RUN.** No browser was available in this environment. Still unverified visually: row click and browser back, active nav state, mobile layout and horizontal overflow, console errors, and the Today/Yesterday grouping in a real time zone (grouping logic is unit tested). Verified only at HTTP/HTML level.
+
+**Bugs found/fixed**: none in existing code. `runs.trace` is `NOT NULL`, so a JSON-null legacy trace cannot exist; the guard still handles it. Found and fixed in `AgentTrace`: a saved trace with an action lacking an observation would have rendered a spinner after completion.
+
+**Deviations**: no `loading.tsx` (it would render without the app shell); not-found is an inline panel inside the shell (HTTP 200, not 404); the list renders after hydration so dates group in the viewer's time zone, so the SSR HTML has no rows; no "N steps · M sources" metadata on rows (would need the whole trace); saved follow-ups omitted (allowed by plan section 12).
+
+**Remaining risks**: the browser checks above; `status` only has `success|failed`, so the label depends on `trace.answer.kind` and legacy failed rows show "Error"; very old rows with a differing `trace.steps` shape lose their trace (answer text still shows).

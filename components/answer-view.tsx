@@ -96,7 +96,7 @@ export function AnswerView({
   retryQuestion,
 }: {
   result: AgentResult;
-  onAsk: (question: string) => void;
+  onAsk?: (question: string) => void; // omitted for saved (read-only) results: no choices, follow-ups or retry
   retryQuestion?: string; // lets the "error" kind offer Try again
 }) {
   const { answer } = result;
@@ -105,7 +105,7 @@ export function AnswerView({
   // Partial research is kept for "insufficient_data"; other non-answers carry no tables or sources.
   const showEvidence = isAnswer || answer.kind === "insufficient_data";
 
-  if (answer.kind === "clarification" && answer.clarification) {
+  if (onAsk && answer.kind === "clarification" && answer.clarification) {
     return (
       <section className="mt-8">
         <h2 className="text-lg font-medium text-ink">
@@ -131,7 +131,7 @@ export function AnswerView({
       ) : (
         <StatePanel tone={answer.kind === "error" ? "error" : "neutral"} title={TITLES[answer.kind] ?? "Comps says"}>
           {body}
-          {answer.kind === "error" && retryQuestion && (
+          {answer.kind === "error" && retryQuestion && onAsk && (
             <button
               type="button"
               onClick={() => onAsk(retryQuestion)}
@@ -146,7 +146,7 @@ export function AnswerView({
       {showEvidence && answer.tables.map((table, ti) => <AnswerTable key={ti} table={table} known={known} />)}
       <Notes notes={answer.notes} />
       {showEvidence && <SourcesList sources={answer.sources} />}
-      {answer.kind !== "error" && <FollowUpList questions={answer.followUps} onAsk={onAsk} />}
+      {onAsk && answer.kind !== "error" && <FollowUpList questions={answer.followUps} onAsk={onAsk} />}
 
       {isAnswer && <p className="mt-10 text-xs text-ink-4">Figures from SEC filings. Not investment advice.</p>}
     </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { PlusIcon, TagIcon } from "@/components/ui/icons";
+import { HistoryIcon, PlusIcon, TagIcon } from "@/components/ui/icons";
 import { NEW_QUESTION_EVENT } from "./events";
 
 const itemClass = (active: boolean) =>
@@ -32,7 +32,7 @@ export function Logo({ className = "" }: { className?: string }) {
   );
 }
 
-// Desktop rail. Only real destinations: no History or other placeholders.
+// Desktop rail. Only real destinations: no placeholders.
 export function Sidebar() {
   const { pathname, newQuestion } = useNav();
   return (
@@ -48,6 +48,15 @@ export function Sidebar() {
         >
           <PlusIcon size={18} />
         </button>
+        <Link
+          href="/history"
+          className={itemClass(pathname.startsWith("/history"))}
+          aria-label="History"
+          aria-current={pathname.startsWith("/history") ? "page" : undefined}
+          title="History"
+        >
+          <HistoryIcon size={18} />
+        </Link>
         <Link
           href="/pricing"
           className={itemClass(pathname.startsWith("/pricing"))}
@@ -76,6 +85,14 @@ export function MobileNav() {
       >
         <PlusIcon size={18} />
       </button>
+      <Link
+        href="/history"
+        className={`${itemClass(pathname.startsWith("/history"))} h-9 w-9`}
+        aria-label="History"
+        aria-current={pathname.startsWith("/history") ? "page" : undefined}
+      >
+        <HistoryIcon size={18} />
+      </Link>
       <Link
         href="/pricing"
         className={`${itemClass(pathname.startsWith("/pricing"))} h-9 w-9`}

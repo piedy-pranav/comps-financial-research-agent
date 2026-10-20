@@ -70,14 +70,16 @@ export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: bo
           return (
             <li key={i} className="flex items-start gap-2.5">
               <span className="mt-[3px] flex w-3.5 shrink-0 justify-center">
-                {!row.done ? (
+                {!row.done && !loading ? (
+                  <span className="mt-1.5 block h-px w-2.5 bg-ink-4" />
+                ) : !row.done ? (
                   <SpinnerIcon size={13} className="text-accent" />
                 ) : row.ok ? (
                   <CheckIcon size={14} className="text-accent" />
                 ) : (
                   <XIcon size={14} className="text-neg" />
                 )}
-                <span className="sr-only">{!row.done ? "In progress" : row.ok ? "Done" : "Failed"}</span>
+                <span className="sr-only">{!row.done ? (loading ? "In progress" : "Not completed") : row.ok ? "Done" : "Failed"}</span>
               </span>
               <span className="min-w-0">
                 <span className={row.done ? "text-ink-2" : "text-ink"}>{row.label}</span>
