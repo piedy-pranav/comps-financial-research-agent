@@ -33,8 +33,8 @@ function check(name: string, ok: boolean) {
 }
 
 const html = renderToStaticMarkup(createElement(AnswerView, { result, onAsk: () => {} }));
-check("shows the question text", html.includes("could be more than one company"));
-check("button for each option", html.includes("DELTA AIR LINES, INC. (DAL)") && html.includes("DeltaSoft Corp (DSFT)"));
+check("shows the heading naming the ambiguous query", html.includes("Which company did you mean by") && html.includes("Delta"));
+check("button for each option (name and ticker)", /DELTA AIR LINES, INC\.[\s\S]*\(DAL\)/.test(html) && /DeltaSoft Corp[\s\S]*\(DSFT\)/.test(html));
 check("exactly 2 option buttons + the Ask submit", (html.match(/<button/g) ?? []).length === 3);
 check("text box for the exact name", html.includes('placeholder="Or type the exact company name or ticker"'));
 check("Ask button disabled until something is typed", /<button[^>]*disabled[^>]*>Ask<\/button>/.test(html));
