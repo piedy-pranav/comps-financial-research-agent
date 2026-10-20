@@ -74,6 +74,12 @@ export const HistoryIcon = (p: IconProps) => (
     <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5v4h4M12 7.5V12l3 2" />
   </Icon>
 );
+export const SidebarIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    <path d="M9.5 4v16" />
+  </Icon>
+);
 export const TagIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3 12V4h8l10 10-8 8L3 12Z" />
