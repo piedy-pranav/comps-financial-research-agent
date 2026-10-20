@@ -493,3 +493,24 @@ Source of truth: `docs/RESEARCH_HISTORY_PLAN.md` (HIST-001 to HIST-007). Read-si
 - Setup: Stripe sandbox account, real `sk_test_` key and CLI-issued `whsec_` in `.env.local`. The current CLI requires named events, so the forwarder is `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded --forward-to localhost:3000/api/stripe/webhook`.
 - Result (manual run by Pranav, with a second non-test account): entered a Stripe test card, completed checkout, the account became Pro with the 25-per-day allowance, and the `stripe listen` terminal showed the webhook delivered successfully. This closes the main "live checkout" item from A7 locally.
 - Still open: cancelled-checkout path, webhook replay (`stripe events resend`), the real-database 402 at the Free limit, plan persistence after logout/login, and everything on the deployed Railway URL (needs a dashboard webhook endpoint with its own signing secret). Update this entry as each is verified.
+
+### A10. Expandable sidebar (2026-10-19, branch `pranav-dev`, not merged)
+
+UI-only change. No agent, usage, Stripe, schema or API code touched.
+
+**Behavior**
+- Desktop sidebar (md and up) is expanded by default: logo, a panel-style collapse toggle, and labeled rows for New question, History and Pricing (220px, `--sidebar-width-open`). The toggle collapses it to the previous 60px icon rail (icons with tooltips and aria-labels); toggling again expands it. Active-route styling is unchanged.
+- Below the md breakpoint the compact top-bar nav is unchanged and has no toggle.
+- The choice is stored in `localStorage` under `comps:sidebar-collapsed:<user id>` (anonymous: `:anon`), via `useSyncExternalStore`, so it survives reloads and stays in sync across tabs. Storage errors are swallowed and the sidebar simply stays open. Server render and first paint are always expanded.
+
+**Files changed**: `components/layout/sidebar.tsx`, `components/layout/app-shell.tsx` (passes `userId`), `components/ui/icons.tsx` (`SidebarIcon`), `app/globals.css` (`--sidebar-width-open`). Commits `42783d2`, and the per-account fix after it.
+
+**Tests run**: `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass. Confirmed in the browser by the user: new accounts open expanded.
+
+**Bug found and fixed**: the first version stored the collapse choice once per browser, so a new account on a browser where someone had collapsed the sidebar also opened collapsed. The key is now per account. Existing accounts' old browser-wide value is ignored once, so they start expanded and then remember their own choice.
+
+**Remaining risks**: a returning user who collapsed the sidebar sees one frame of the expanded layout before it snaps shut, because the preference is only readable after hydration. A cookie-based preference would remove the flash; not done. Mobile layout and the collapsed-rail tooltips were not separately checked in a browser.
+
+### A11. History delete: deferred (2026-10-19)
+
+Not implemented. Finding recorded so it is not lost: `lib/usage.ts` `countSuccessfulRuns` counts `runs` rows with `status = 'success'` (Free: all time, Pro: since UTC midnight), so hard-deleting a run would refund quota, and `runs` has no DELETE policy for `authenticated` (`001_init.sql` revokes it). Proposed approach, pending approval and a Supabase migration run by a teammate: add a nullable `runs.deleted_at`, have delete set it server-side for the caller's own row, filter it out of History queries, and keep counting it for usage. Needs a `docs/DESIGN.md` note when built.
