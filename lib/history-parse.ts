@@ -140,19 +140,24 @@ export function statusLabel(kind: string | null | undefined, status: string): st
   return status === "success" ? "Answer" : "Error";
 }
 
-export type HistoryRow = { id: string; question: string; createdAt: string; label: string; failed: boolean };
+// One research thread in the History list. Grouped and ordered by last activity (updatedAt).
+export type ThreadRow = { id: string; title: string; createdAt: string; updatedAt: string; runCount: number };
 
 export type HistoryGroup<T> = { label: "Today" | "Yesterday" | "Earlier"; rows: T[] };
 
 const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 // Groups already-sorted rows by the viewer's local calendar day, preserving order.
-export function groupByDay<T extends { createdAt: string }>(rows: T[], now: Date): HistoryGroup<T>[] {
+export function groupByDay<T extends { createdAt: string }>(
+  rows: T[],
+  now: Date,
+  timeOf: (row: T) => string = (row) => row.createdAt, // History lists pass updatedAt: threads sort by last activity
+): HistoryGroup<T>[] {
   const today = dayStart(now);
   const yesterday = dayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
   const groups: HistoryGroup<T>[] = [];
   for (const row of rows) {
-    const t = new Date(row.createdAt).getTime();
+    const t = new Date(timeOf(row)).getTime();
     const label = Number.isNaN(t) ? "Earlier" : t >= today ? "Today" : t >= yesterday ? "Yesterday" : "Earlier";
     const last = groups[groups.length - 1];
     if (last && last.label === label) last.rows.push(row);

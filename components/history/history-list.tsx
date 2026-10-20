@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { ArrowRightIcon } from "@/components/ui/icons";
-import { groupByDay, type HistoryRow } from "@/lib/history-parse";
+import { groupByDay, type ThreadRow } from "@/lib/history-parse";
 import { useHydrated } from "./use-hydrated";
 
 function timeOf(iso: string) {
@@ -17,9 +17,9 @@ function dateOf(iso: string) {
 }
 
 // Rows are grouped Today / Yesterday / Earlier by the viewer's local day, so this renders after hydration.
-export function HistoryList({ rows }: { rows: HistoryRow[] }) {
+export function HistoryList({ rows }: { rows: ThreadRow[] }) {
   const hydrated = useHydrated();
-  const groups = useMemo(() => (hydrated ? groupByDay(rows, new Date()) : []), [hydrated, rows]);
+  const groups = useMemo(() => (hydrated ? groupByDay(rows, new Date(), (r) => r.updatedAt) : []), [hydrated, rows]);
 
   if (!hydrated) return <div aria-busy="true" className="min-h-40" />;
 
@@ -38,12 +38,12 @@ export function HistoryList({ rows }: { rows: HistoryRow[] }) {
                   className="group -mx-2 flex items-center justify-between gap-4 rounded-md px-2 py-3.5 transition-colors duration-150 hover:bg-subtle"
                 >
                   <span className="min-w-0">
-                    <span className="block text-[15px] leading-6 text-ink [overflow-wrap:anywhere]">{row.question}</span>
+                    <span className="block text-[15px] leading-6 text-ink [overflow-wrap:anywhere]">{row.title}</span>
                     <span className="mt-0.5 block text-xs text-ink-3">
-                      <span className={row.failed ? "text-ink-4" : "text-ink-2"}>{row.label}</span>
+                      <span className="text-ink-2">{row.runCount === 1 ? "1 question" : `${row.runCount} questions`}</span>
                       <span className="mx-1.5 text-ink-4">·</span>
-                      {group.label === "Earlier" ? `${dateOf(row.createdAt)}, ` : ""}
-                      {timeOf(row.createdAt)}
+                      {group.label === "Earlier" ? `${dateOf(row.updatedAt)}, ` : ""}
+                      {timeOf(row.updatedAt)}
                     </span>
                   </span>
                   <ArrowRightIcon

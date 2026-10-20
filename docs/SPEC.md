@@ -322,6 +322,26 @@ Buy/sell/hold and price-prediction handling, prompt-injection wrapping (SEC-004)
 
 ---
 
+## 6B. Threads and continuation
+
+### THREAD-001 — Ownership
+Every run belongs to one thread and one user. The server never trusts a browser-supplied `threadId`: it loads the thread by id AND authenticated user before any usage check or model spend. A missing, malformed or foreign thread returns 404 with the same body. The client never sends conversation history.
+
+### THREAD-002 — Creation
+A new conversation creates its thread only after auth, validation and the usage check pass. Title = trimmed first question, max 120 characters. Failed runs attach to the thread like any run.
+
+### THREAD-003 — Context bound
+A follow-up receives the latest 3 successful runs of the thread, oldest first: question (max 1000 chars) and answer prose plus notes (max 2500 chars), deterministically truncated, with citation markers removed. No sources, tables, traces or tool output. A context load error fails the request.
+
+### THREAD-004 — Grounding isolation
+Prior turns are context only. The agent must re-fetch every financial or news figure it cites; the citation registry is built only from the current run's tools; newly fetched tool output wins over any earlier figure. Clarification logic still applies.
+
+### THREAD-005 — Usage independence
+Usage still counts successful `runs` per user exactly as PLAN-001..005. Threads are never counted.
+
+### THREAD-006 — History
+History lists threads by `updated_at` desc with title and question count. `/history/[threadId]` rebuilds every saved turn from Supabase and continues the same thread. "New question" starts a new thread.
+
 ## 7. Streaming API contract
 
 ### STREAM-001 — Format

@@ -164,6 +164,9 @@ The browser may return from Stripe before Supabase has been updated by the webho
 
 ## Trade-offs
 
+### Threads vs runs (Threads / Continuation)
+`threads` groups `runs`; `runs` keeps `user_id`, `status` and all usage semantics, so quotas are unchanged. `runs.thread_id` is nullable (older deployed code and the migration transition) and has no cascade so deleting a thread can never erase usage history. Writes use the admin client, which bypasses RLS, so ownership is enforced in `lib/threads.ts` with explicit `user_id` filters; the FK alone does not stop a cross-user association. Prior context is built deterministically (no summarizer model), capped at 3 runs, and passed inside the first user message so the system prompt stays constant for caching; it is declared non-evidence.
+
 ### 1. One Railway service instead of split frontend/agent services
 Chosen for:
 - one deploy

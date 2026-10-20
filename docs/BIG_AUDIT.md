@@ -600,3 +600,19 @@ Trigger: a VF vs Ralph Lauren driver answer showed "Researched in 5 steps" above
 **Test**: `scripts/try-clarify-ui.ts` N8 check inverted to the new contract (3 parallel + 1 later call = 4 steps with 4 rows) plus singular, live-count and live-empty checks; 11/11 pass. `try-history` 24/24, lint, `tsc --noEmit`, build pass. Browser check NOT RUN: rendering verified with `renderToStaticMarkup` only.
 
 **Deviation**: reverses the earlier "steps = loop rounds" decision (N8); that count is still available as the highest `iteration` in the trace if wanted. A run with many parallel calls now reads as a larger number than the iteration cap (up to 8 rounds can contain more tool calls).
+
+### A14. Threads / Continuation (2026-10-20, branch `pranav-dev`, not merged)
+
+**Requirements**: new SPEC 6B (THREAD-001..006), `docs/THREADS_CONTINUATION_PLAN.md`.
+
+**Migration** `supabase/migrations/002_add_threads.sql`, applied manually in Supabase by the user; post-migration verification queries passed (user-confirmed). Deviations from the plan: sequential name (repo convention), no `ON DELETE CASCADE` on `runs.thread_id`, `thread_id` left nullable. Table grants added for `threads` so the insert/update policies are effective.
+
+**Changed**: `lib/agent/context.ts` (new, pure), `lib/threads.ts` (new, admin writes + ownership), `lib/agent/prompt.ts` and `lib/agent/loop.ts` (optional `priorContext`; behaviour unchanged when empty), `app/api/agent/route.ts` (threadId, ownership, thread creation, `thread_id` on insert, `X-Thread-Id` header), `lib/history.ts` and `lib/history-parse.ts` (thread list/detail, `ThreadRow`, `groupByDay` takes an optional time accessor), `components/ask-form.tsx` (thread-aware workspace), `components/history/history-list.tsx`, `app/history/page.tsx`, `app/history/[id]/page.tsx` (`[id]` is now a thread id). Not touched: tools, calculator, citation registry, final answer schema, iteration limits, usage, Stripe, NDJSON events.
+
+**Deviation**: prior turns go into the first user message as a wrapped block rather than as alternating chat roles (keeps system prompt cacheable and makes the "not evidence" framing explicit).
+
+**Tests**: `scripts/try-threads.ts` 22/22 offline (3-run bound, truncation, no sources/tables/trace/URLs/citation markers, tag forging, message shape). `scripts/try-threads-live.mjs` all pass against the dev Supabase with two temp users and real agent calls: one thread per new conversation, follow-up reuses it with 2 runs attached and `updated_at` advancing, run 2 re-ran `get_financials` and cited its own sources, reference resolved ("that" = Nike), cross-user continue = 404 and saves nothing, RLS blocks read/insert/update of another user's thread, no delete, malformed/empty requests create no thread. Regressions: try-history 24, try-stream 8, try-usage 18, try-loop 22, try-grounding 31; lint, tsc, build pass. `try-clarify-ui.ts` fails to start in this environment with or without these changes (pre-existing, not investigated).
+
+**Not run**: browser flow (no browser tool in this session): New Question after a thread, History list, open thread, follow-up chips, refresh, mobile, console errors. Stale-figure test (earlier answer has a different number than tool output) is covered only by the prompt rule and the isolation checks, not an adversarial live case.
+
+**Remaining risks**: old `/history/<run id>` links no longer resolve (ids are thread ids now); the live thread page shows the streamed turn until `router.refresh()` lands, and keeps it if the best-effort save failed; threads created but never saved (client dropped mid-run) are hidden from History but remain in the table; untracked `supabase/*-backup-oct20.csv` files contain user data and must not be committed.

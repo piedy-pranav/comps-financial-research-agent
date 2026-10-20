@@ -115,6 +115,7 @@ export async function runAgent(
   question: string,
   onStep: (step: TraceStep) => void,
   signal?: AbortSignal, // aborted when the user disconnects: stop spending tokens
+  priorContext = "", // formatted earlier turns of the thread (context only, never evidence); "" for a new thread
 ): Promise<AgentResult> {
   const model = process.env.LLM_MODEL || DEFAULT_MODEL;
   const ctx = createToolContext();
@@ -131,7 +132,7 @@ export async function runAgent(
 
   const start = Date.now();
   const messages: Anthropic.Beta.BetaMessageParam[] = [
-    { role: "user", content: buildUserMessage(question) },
+    { role: "user", content: buildUserMessage(question, priorContext) },
   ];
   let nudged = false;
   const maxIterations = maxIterationsFor(question); // 6, or 8 for why/driver questions

@@ -30,9 +30,12 @@ Comps is a single Next.js app deployed as one service on Railway. The frontend, 
 | Table | Columns | Notes |
 |---|---|---|
 | `profiles` | `id` (= auth user id), `email`, `plan` (`free` or `pro`, default `free`), `pro_since`, `created_at` | Created automatically on signup |
-| `runs` | `id`, `user_id`, `question`, `answer`, `trace` (json), `status` (`success` or `failed`), `created_at` | One row per question. Usage limits are counted from this table |
+| `runs` | `id`, `user_id`, `thread_id` (nullable FK to `threads`, no cascade), `question`, `answer`, `trace` (json), `status` (`success` or `failed`), `created_at` | One row per question. Usage limits are counted from this table (never from threads) |
+| `threads` | `id`, `user_id` (FK `auth.users`), `title` (first question, max 120 chars), `created_at`, `updated_at` | One row per research conversation (migration `002_add_threads.sql`). History lists threads by `updated_at` |
 
-Row-level security is on for both tables, so a user can only read their own rows. Only the server (using the service key) can change `plan`.
+Row-level security is on for all three tables, so a user can only read their own rows. `threads` also has own-row insert/update policies (the app itself writes with the service key).
+
+**Threads flow** (`/api/agent`, optional `threadId` in the body): auth, validate question, if `threadId` is given check `threads.id` AND `user_id` (missing or foreign = 404), usage check, then create the thread (new conversation) or load the latest 3 successful runs of the thread as context, run the agent, insert the run with `thread_id`, bump `threads.updated_at` (best effort). The thread id is returned in the `X-Thread-Id` response header; NDJSON events are unchanged. Prior answers reach the model only as a bounded, citation-stripped context block that states it is not evidence (`lib/agent/context.ts`). Only the server (using the service key) can change `plan`.
 
 ### Diagnostic ("Why?") questions
 

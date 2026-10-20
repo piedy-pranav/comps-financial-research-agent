@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, AgentResult, TraceStep } from "@/lib/agent/types";
+import type { ThreadDetail } from "@/lib/history";
 import type { UsageDenial } from "@/lib/usage-types";
 import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
 import { validateQuestion } from "@/lib/validation";
 import { NEW_QUESTION_EVENT } from "./layout/events";
 import { AgentTrace } from "./agent-trace";
 import { AnswerView } from "./answer-view";
+import { SavedTime } from "./history/saved-time";
 import { ExampleQuestions } from "./research/example-questions";
 import { QuestionComposer } from "./research/question-composer";
 import { QuestionHeader } from "./research/question-header";
@@ -22,8 +24,16 @@ const EXAMPLES = [
   "How have VF Corp's margins changed over the last 5 years?",
 ];
 
-// The research workspace: owns the question, the streamed trace and the final result.
-export function AskForm() {
+// The research workspace: owns the question, the streamed trace and the final result. Without `initialThread` it is
+// the empty-state home page, and the first answer creates a thread that later follow-ups in this session reuse.
+// With `initialThread` (/history/[threadId]) it shows the saved turns and every question continues that thread.
+export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
+  const turns = initialThread?.runs ?? [];
+  const [threadId, setThreadId] = useState<string | null>(initialThread?.id ?? null);
+  // How many saved turns existed when the live question was asked. Once the server re-renders with more, the live
+  // turn has become a saved one and is hidden (derived, so no effect or duplicate).
+  const [liveBase, setLiveBase] = useState(0);
+  const liveRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState(""); // what is typed in the composer
   const [asked, setAsked] = useState<string | null>(null); // the question being researched
   const [loading, setLoading] = useState(false);
@@ -46,6 +56,7 @@ export function AskForm() {
     abortRef.current = controller;
 
     setAsked(validation.question);
+    setLiveBase(turns.length);
     setDraft("");
     setLoading(true);
     setInputError(null);
@@ -53,13 +64,13 @@ export function AskForm() {
     setLimit(null);
     setSteps([]);
     setResult(null);
-    window.scrollTo({ top: 0 });
+    if (!initialThread) window.scrollTo({ top: 0 });
 
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: validation.question }),
+        body: JSON.stringify({ question: validation.question, ...(threadId ? { threadId } : {}) }),
         signal: controller.signal,
       });
 
@@ -74,6 +85,10 @@ export function AskForm() {
         setRunError(data?.error ?? "Something went wrong. Please try again.");
         return;
       }
+
+      // Follow-ups from here on belong to this thread (set by the server for new conversations).
+      const returnedThread = res.headers.get("x-thread-id");
+      if (returnedThread) setThreadId(returnedThread);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -126,6 +141,7 @@ export function AskForm() {
   const reset = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    setThreadId(null); // "New question" always starts a new thread
     setDraft("");
     setAsked(null);
     setLoading(false);
@@ -145,8 +161,13 @@ export function AskForm() {
   }, [reset]);
 
   const started = asked !== null;
+  const liveVisible = started && (!initialThread || turns.length === liveBase);
 
-  if (!started) {
+  useEffect(() => {
+    if (initialThread && asked) liveRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [initialThread, asked]);
+
+  if (!started && !initialThread) {
     return (
       <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col justify-center px-4 pb-24 pt-12 sm:px-6">
         <h1 className="text-balance text-center text-2xl font-medium text-ink sm:text-[28px]">
@@ -174,30 +195,59 @@ export function AskForm() {
     );
   }
 
+  const live = (
+    <div ref={liveRef} className="scroll-mt-6">
+      {initialThread ? <TurnHeader question={asked ?? ""} /> : <QuestionHeader question={asked ?? ""} />}
+      <AgentTrace steps={steps} loading={loading} />
+
+      {limit && <LimitPanel denial={limit} />}
+
+      {runError && (
+        <div className="mt-8">
+          <StatePanel tone="error" title="We couldn't complete this research">
+            <p>{runError}</p>
+            <button
+              type="button"
+              onClick={() => void ask(asked ?? "")}
+              className="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:bg-subtle hover:text-ink"
+            >
+              Try again
+            </button>
+          </StatePanel>
+        </div>
+      )}
+
+      {result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked ?? undefined} />}
+    </div>
+  );
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="mx-auto w-full max-w-(--answer-max) flex-1 px-4 pb-10 pt-8 sm:px-6 sm:pt-10">
-        <QuestionHeader question={asked} />
-        <AgentTrace steps={steps} loading={loading} />
-
-        {limit && <LimitPanel denial={limit} />}
-
-        {runError && (
-          <div className="mt-8">
-            <StatePanel tone="error" title="We couldn't complete this research">
-              <p>{runError}</p>
-              <button
-                type="button"
-                onClick={() => void ask(asked)}
-                className="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:bg-subtle hover:text-ink"
-              >
-                Try again
-              </button>
-            </StatePanel>
-          </div>
+        {initialThread && (
+          <>
+            <Link href="/history" className="text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink">
+              &larr; History
+            </Link>
+            <header className="mt-5">
+              <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Research thread</p>
+              <h1 className="mt-2 text-balance text-2xl font-medium leading-snug text-ink [overflow-wrap:anywhere] sm:text-[28px]">
+                {initialThread.title}
+              </h1>
+            </header>
+            {turns.map((turn, i) => (
+              <section key={turn.id} aria-label={`Question ${i + 1}`} className={i === 0 ? "mt-8" : "mt-12 border-t border-line-subtle pt-8"}>
+                <TurnHeader question={turn.question} createdAt={turn.createdAt} />
+                <AgentTrace steps={turn.run.steps} loading={false} />
+                <AnswerView
+                  result={{ status: "success", answer: turn.run.answer, trace: turn.run.steps }}
+                  onAsk={i === turns.length - 1 && !liveVisible ? (q) => void ask(q) : undefined}
+                />
+              </section>
+            ))}
+          </>
         )}
-
-        {result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked} />}
+        {liveVisible && (initialThread ? <section className="mt-12 border-t border-line-subtle pt-8">{live}</section> : live)}
       </div>
 
       <div className="sticky bottom-0 z-10 bg-gradient-to-t from-canvas from-70% to-transparent pb-[max(1rem,env(safe-area-inset-bottom))] pt-6">
@@ -251,5 +301,19 @@ function LimitPanel({ denial }: { denial: UsageDenial }) {
         </p>
       </StatePanel>
     </div>
+  );
+}
+
+// One turn's question inside a thread: a section heading under the thread title.
+function TurnHeader({ question, createdAt }: { question: string; createdAt?: string }) {
+  return (
+    <header>
+      <h2 className="text-balance text-lg font-medium leading-snug text-ink [overflow-wrap:anywhere] sm:text-xl">{question}</h2>
+      {createdAt ? (
+        <SavedTime iso={createdAt} className="mt-1.5 block text-xs text-ink-4" />
+      ) : (
+        <p className="mt-1.5 text-xs text-ink-4">Asked just now</p>
+      )}
+    </header>
   );
 }
