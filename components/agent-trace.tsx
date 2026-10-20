@@ -1,5 +1,6 @@
 "use client";
 
+import { CheckIcon, ChevronRightIcon, SpinnerIcon, XIcon } from "@/components/ui/icons";
 import type { TraceStep } from "@/lib/agent/types";
 
 type Row =
@@ -30,6 +31,7 @@ function toRows(steps: TraceStep[]): Row[] {
   return rows;
 }
 
+// Live research progress while running; collapses to "Researched in N steps" once the answer arrives.
 export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: boolean }) {
   if (!steps.length && !loading) return null;
   const rows = toRows(steps);
@@ -37,45 +39,56 @@ export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: bo
   const stepCount = new Set(steps.filter((s) => s.type === "action").map((s) => s.iteration)).size;
 
   return (
-    <details open={loading} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <summary className="cursor-pointer text-sm font-medium text-slate-700">
-        {loading ? "Researching…" : `Researched in ${stepCount} step${stepCount === 1 ? "" : "s"}`}
+    <details open={loading} className="group mt-8 border-y border-line-subtle">
+      <summary className="flex cursor-pointer list-none items-center gap-2 py-3 text-[13px] text-ink-2 transition-colors duration-150 hover:text-ink [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon size={14} className="text-ink-3 transition-transform duration-150 group-open:rotate-90" />
+        {loading ? (
+          <span className="flex items-center gap-2">
+            Researching
+            <SpinnerIcon size={13} className="text-ink-3" />
+          </span>
+        ) : (
+          `Researched in ${stepCount} step${stepCount === 1 ? "" : "s"}`
+        )}
       </summary>
-      <ol className="mt-3 space-y-2 text-sm">
+      <ol aria-live="polite" className="space-y-2.5 pb-4 pl-[22px] text-[13px]">
         {rows.map((row, i) => {
           if (row.kind === "thought") {
             return (
-              <li key={i} className="text-xs italic text-slate-400">
+              <li key={i} className="pl-6 text-xs leading-5 text-ink-3">
                 {row.text}
               </li>
             );
           }
           if (row.kind === "info") {
             return (
-              <li key={i} className="text-xs text-amber-700">
+              <li key={i} className="pl-6 text-xs leading-5 text-warn">
                 {row.text}
               </li>
             );
           }
           return (
-            <li key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 w-4 shrink-0 text-center">
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="mt-[3px] flex w-3.5 shrink-0 justify-center">
                 {!row.done ? (
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                  <SpinnerIcon size={13} className="text-accent" />
                 ) : row.ok ? (
-                  <span className="text-emerald-600">✓</span>
+                  <CheckIcon size={14} className="text-accent" />
                 ) : (
-                  <span className="text-red-600">✗</span>
+                  <XIcon size={14} className="text-neg" />
                 )}
+                <span className="sr-only">{!row.done ? "In progress" : row.ok ? "Done" : "Failed"}</span>
               </span>
-              <span>
-                <span className="text-slate-800">{row.label}</span>
-                {row.done && <span className="ml-2 text-slate-500">{row.summary}</span>}
+              <span className="min-w-0">
+                <span className={row.done ? "text-ink-2" : "text-ink"}>{row.label}</span>
+                {row.done && (
+                  <span className={`block text-xs leading-5 ${row.ok ? "text-ink-3" : "text-neg"}`}>{row.summary}</span>
+                )}
               </span>
             </li>
           );
         })}
-        {loading && !rows.length && <li className="text-slate-500">Starting…</li>}
+        {loading && !rows.length && <li className="pl-6 text-xs text-ink-3">Starting…</li>}
       </ol>
     </details>
   );
