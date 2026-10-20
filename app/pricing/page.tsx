@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { CheckoutButton } from "@/components/billing/checkout-button";
+import { ConfirmingUpgrade } from "@/components/billing/upgrade-status";
 import { AppShell } from "@/components/layout/app-shell";
 import { CheckIcon } from "@/components/ui/icons";
-import { FREE_QUESTION_LIMIT, PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
+import { FREE_QUESTION_LIMIT, PRO_DAILY_LIMIT, PRO_PRICE_USD, type Plan } from "@/lib/plans";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { getUserPlan } from "@/lib/usage";
 
 export const metadata: Metadata = { title: "Pricing · Comps" };
 
@@ -13,9 +16,18 @@ const secondaryButton =
 const disabledButton =
   "block w-full cursor-not-allowed rounded-md border border-line-subtle bg-subtle px-4 py-2 text-center text-[13px] font-medium text-ink-4";
 
-// Visual shell for Step 3: plans from docs/PRD.md. Payments are not wired yet, so Pro and Team stay unhooked.
-export default async function PricingPage() {
-  const user = await getCurrentUser();
+// Plans from docs/PRD.md. The Pro button starts a Stripe test-mode Checkout; Pro itself is only ever granted by the
+// verified webhook, so ?checkout=success just shows a "confirming" state until the plan reads Pro.
+export default async function PricingPage({ searchParams }: { searchParams: Promise<{ checkout?: string }> }) {
+  const [user, { checkout }] = await Promise.all([getCurrentUser(), searchParams]);
+  let plan: Plan | null = null;
+  if (user) {
+    try {
+      plan = await getUserPlan(user.id);
+    } catch (err) {
+      console.error("[pricing] plan lookup failed", err instanceof Error ? err.message : err);
+    }
+  }
 
   return (
     <AppShell section="Pricing">
@@ -26,6 +38,22 @@ export default async function PricingPage() {
             Cited peer benchmarks from SEC filings, without the enterprise price tag.
           </p>
         </header>
+
+        {checkout === "success" && plan === "free" && (
+          <div className="mt-8">
+            <ConfirmingUpgrade />
+          </div>
+        )}
+        {checkout === "success" && plan === "pro" && (
+          <div role="status" className="mt-8 rounded-md border border-line-subtle border-l-2 border-l-accent bg-raised px-5 py-4 text-[14px] text-ink-2">
+            Upgrade complete. You&rsquo;re on Pro with {PRO_DAILY_LIMIT} questions a day.
+          </div>
+        )}
+        {checkout === "cancelled" && plan !== "pro" && (
+          <div role="status" className="mt-8 rounded-md border border-line-subtle border-l-2 border-l-line-strong bg-raised px-5 py-4 text-[14px] text-ink-2">
+            Checkout cancelled. You haven&rsquo;t been charged and your plan is unchanged.
+          </div>
+        )}
 
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           <PlanCard
@@ -47,11 +75,20 @@ export default async function PricingPage() {
             features={[`${PRO_DAILY_LIMIT} questions a day`, "Everything in Free"]}
             recommended
           >
-            {/* Step 3 replaces this with a button that POSTs to /api/checkout. */}
-            <button type="button" disabled className={disabledButton}>
-              Upgrade to Pro
-            </button>
-            <p className="mt-2 text-center text-xs text-ink-4">Payments aren&rsquo;t enabled yet.</p>
+            {plan === "pro" ? (
+              <p className="flex items-center justify-center gap-2 rounded-md border border-line-subtle bg-subtle px-4 py-2 text-[13px] font-medium text-ink">
+                <CheckIcon size={14} className="text-accent" />
+                You&rsquo;re on Pro
+              </p>
+            ) : user && plan === "free" ? (
+              <CheckoutButton />
+            ) : user ? (
+              <p className="text-center text-xs text-ink-4">Couldn&rsquo;t load your plan. Reload to try again.</p>
+            ) : (
+              <Link href="/signup" className={secondaryButton}>
+                Sign up to upgrade
+              </Link>
+            )}
           </PlanCard>
 
           <PlanCard

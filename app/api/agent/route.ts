@@ -3,6 +3,7 @@ import { runAgent } from "@/lib/agent/loop";
 import { createAgentStream } from "@/lib/agent/runStream";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { checkUsage, usageDenialBody } from "@/lib/usage";
 import { validateQuestion } from "@/lib/validation";
 
 // Agent runs can take 30 to 60 seconds.
@@ -35,8 +36,12 @@ export async function POST(request: Request) {
     }
     const { question } = validation;
 
-    // TODO(step 3): const usage = await checkUsage(user.id);
-    // if (!usage.allowed) return NextResponse.json({ error: usage.message, code: usage.code }, { status: 402 });
+    // Usage is checked before the stream (and any model spend). A failed check throws to the 500 below
+    // rather than letting the run through.
+    const usage = await checkUsage(user.id);
+    if (!usage.allowed) {
+      return NextResponse.json(usageDenialBody(usage), { status: 402 });
+    }
 
     const stream = createAgentStream(question, {
       run: runAgent,

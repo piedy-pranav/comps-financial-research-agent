@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { type Plan } from "@/lib/plans";
 import { createClient, getCurrentUser } from "@/lib/supabase/server";
+import { checkUsage } from "@/lib/usage";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
@@ -19,10 +20,19 @@ export async function AppShell({
   if (!user && requireUser) redirect("/login");
 
   let plan: Plan | null = null;
+  let remaining: number | undefined;
   if (user) {
-    const supabase = await createClient();
-    const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).maybeSingle();
-    plan = profile?.plan === "pro" ? "pro" : "free";
+    try {
+      const usage = await checkUsage(user.id);
+      plan = usage.plan;
+      remaining = usage.remaining;
+    } catch (err) {
+      // The badge must never take the page down. Fall back to the plan alone, without a count.
+      console.error("[app-shell] usage lookup failed", err instanceof Error ? err.message : err);
+      const supabase = await createClient();
+      const { data: profile } = await supabase.from("profiles").select("plan").eq("id", user.id).maybeSingle();
+      plan = profile?.plan === "pro" ? "pro" : "free";
+    }
   }
 
   return (
@@ -35,7 +45,7 @@ export async function AppShell({
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar section={section} user={user} plan={plan} />
+        <TopBar section={section} user={user} plan={plan} remaining={remaining} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           {children}
         </main>

@@ -420,3 +420,36 @@ Source of truth: `docs/COMPS_UI_REBUILD_PERPLEXITY_FINANCE.md`. Frontend only: n
 **Remaining risks**
 - `AnswerView` splits "(...ISO date...)" parentheticals into a second line by pattern; unusual model phrasing falls back to showing the text whole (correct, just less tidy).
 - Sticky composer uses a gradient fade for separation; it is functional, not decorative, but is the only gradient in the UI.
+
+### A7. Step 3: usage limits + Stripe Pro upgrade (2026-10-19, branch `pranav-dev`, not merged)
+
+Requirements: AUTH-002, PLAN-001 to PLAN-005, PAY-001 to PAY-008, SEC-003, UI-005. Agent loop, prompts, SEC logic, citations, tools, final-answer schema and NDJSON streaming were not touched. The only change in `/api/agent` is the usage check before the stream.
+
+**What was implemented**
+- `lib/usage.ts` (+ `lib/usage-types.ts`): `checkUsage(userId)` reads the plan from `profiles` and counts `runs` with `status = 'success'` (Free: all time, limit 3; Pro: since 00:00:00Z today, limit 25). Returns `used, limit, remaining, code, message, resetAt`; `resetAt` is next UTC midnight for Pro. No counter table. A store error throws, so the route fails closed (500), never "allowed".
+- `/api/agent`: auth, validate, `checkUsage`, then HTTP 402 JSON (`error, code, usage{plan,used,limit,remaining,resetAt}`) before any stream or model spend. Allowed requests go through the unchanged NDJSON path.
+- `lib/stripe.ts`: lazy server-only client; refuses any key that is not `sk_test_`.
+- `lib/billing.ts` + `/api/checkout`: authenticated only (401); plan read from DB; Pro gets 409 `ALREADY_PRO` and no session; otherwise a one-time $19 USD `payment` session with `metadata {supabase_user_id, product: "comps_pro"}` and `client_reference_id` from the authenticated user; success/cancel URLs `/pricing?checkout=success|cancelled` from `NEXT_PUBLIC_APP_URL`. It never touches `profiles.plan`.
+- `/api/stripe/webhook`: raw body, `stripe-signature` verified with `STRIPE_WEBHOOK_SECRET` before any DB access (400 on failure). Only `checkout.session.completed` (and `async_payment_succeeded`) that is paid, mode `payment`, USD 1900, `product = comps_pro`, with a UUID `supabase_user_id` matching `client_reference_id` updates the profile. Update sets `plan = 'pro'`, `pro_since = existing ?? now`. A replay when already Pro with `pro_since` set does no write. Malformed or mismatched sessions are logged and acknowledged (200) with no update; DB errors return 500 so Stripe retries.
+- UI (no visual redesign): plan badge shows real count ("2 left", "24 left today") from `AppShell`; `router.refresh()` after each completed run and after a 402 keeps it current. Ask form renders a 402 as a neutral panel: Free limit shows "Upgrade to Pro" linking to `/pricing`; Pro daily limit shows the reset time and no upgrade CTA. Pricing page: Free user gets `CheckoutButton` (disabled while creating the session); Pro sees "You're on Pro"; logged out sees "Sign up to upgrade"; `?checkout=cancelled` shows a neutral "plan unchanged" note; `?checkout=success` while still Free shows "Confirming your upgrade…" and re-reads the plan every 2s for about 30s, then a "Check again" state. The redirect itself never grants Pro.
+
+**Files changed**: `lib/usage.ts`, `lib/usage-types.ts` (new), `lib/stripe.ts`, `lib/billing.ts` (new), `app/api/agent/route.ts`, `app/api/checkout/route.ts`, `app/api/stripe/webhook/route.ts`, `app/pricing/page.tsx`, `components/ask-form.tsx`, `components/billing/plan-badge.tsx`, `components/billing/checkout-button.tsx` (new), `components/billing/upgrade-status.tsx` (new), `components/layout/app-shell.tsx`, `components/layout/top-bar.tsx`, `scripts/try-usage.ts` (new), `scripts/try-stripe.ts` (new), `package.json` / `package-lock.json` (`stripe@23`). `.env.example` already had all three Stripe/app-URL variables, so it is unchanged.
+
+**Tests run**
+- `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass.
+- `NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-usage.ts`: 16/16. Covers eval U02 to U06 (free 0/2/3, failed rows ignored, Pro 24/25 today, yesterday ignored, row exactly at 00:00:00Z counts, remaining clamped, reset across month/year end, 402 body shape, store error propagates). Uses an in-memory runs table with the same filters as the Supabase query; it does not hit the real database.
+- `... scripts/try-stripe.ts`: 28/28. Real Stripe signature verification (`generateTestHeaderString` / `constructEvent`) with an in-memory profile store. Covers S02, S03, S04 (invalid, missing, tampered, wrong secret), S05, S06, unrelated events, 7 malformed-session variants, unknown user, DB-error propagation, async payment, and the real webhook route handler returning 400 on a bad or absent signature.
+- Local HTTP against `next start`: logged-out `/api/agent` 401; logged-out `/api/checkout` 401; webhook with bad or missing signature 400; `/pricing` logged-out renders "Sign up to upgrade".
+- Step 2 offline regressions: `try-grounding` 29/0 fail, `try-stream` 8/0, `try-loop` 14/0, `try-news` 6/0, `try-clarify-ui` 8/0.
+
+**Bugs found and fixed**: none in Step 2 code. During build-out, the `server-only` import blocks plain `tsx` runs, so the new scripts need `NODE_OPTIONS=--conditions=react-server`.
+
+**Deviations from step3-plan.md**: checkout and webhook logic live in `lib/billing.ts` (not in the route files) so they can be tested with a fake store; this is the "small shared helper" the plan allowed. `/api/agent` reads the plan with the admin client (`lib/usage.ts`), which also replaces the RLS profile read in `AppShell`. The webhook also accepts `checkout.session.async_payment_succeeded` and rejects sessions whose amount is not USD 19.00.
+
+**Remaining risks / limitations**
+- Concurrent requests can both pass the count check before either success is persisted (documented in PLAN-005; no schema change).
+- Two sessions for one user can both pay if the user opens two checkouts before the first webhook lands; the second payment is idempotent on the plan but is a real charge in live mode. Test-mode only here.
+- `.env.local` currently holds placeholder values for `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, so no real Stripe call has been made.
+- The `ConfirmingUpgrade` polling, the 402 panels and the badge counts were type-checked and built, not exercised in a browser.
+
+**Live checks still pending**: browser journey B01 (free to limit to upgrade UI to checkout with `4242 4242 4242 4242` to Pro to ask again, run persisted, plan persists after reload); cancelled checkout leaves plan Free; Stripe CLI or dashboard webhook replay; a real run through `/api/agent` hitting a real 402 from the real database; primary Sonnet demo question after upgrade.

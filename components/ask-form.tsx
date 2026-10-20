@@ -1,7 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, AgentResult, TraceStep } from "@/lib/agent/types";
+import type { UsageDenial } from "@/lib/usage-types";
+import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
 import { validateQuestion } from "@/lib/validation";
 import { NEW_QUESTION_EVENT } from "./layout/events";
 import { AgentTrace } from "./agent-trace";
@@ -25,6 +29,8 @@ export function AskForm() {
   const [loading, setLoading] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null); // the question was rejected before any request
   const [runError, setRunError] = useState<string | null>(null); // the request or the run failed
+  const [limit, setLimit] = useState<UsageDenial | null>(null); // HTTP 402: out of questions (not an error)
+  const router = useRouter();
   const [steps, setSteps] = useState<TraceStep[]>([]);
   const [result, setResult] = useState<AgentResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -44,6 +50,7 @@ export function AskForm() {
     setLoading(true);
     setInputError(null);
     setRunError(null);
+    setLimit(null);
     setSteps([]);
     setResult(null);
     window.scrollTo({ top: 0 });
@@ -59,6 +66,11 @@ export function AskForm() {
       // Auth, validation and limit errors come back as plain JSON before streaming starts.
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
+        if (res.status === 402 && (data?.code === "FREE_LIMIT_REACHED" || data?.code === "DAILY_LIMIT_REACHED")) {
+          setLimit(data as UsageDenial);
+          router.refresh(); // sync the plan badge with the server's count
+          return;
+        }
         setRunError(data?.error ?? "Something went wrong. Please try again.");
         return;
       }
@@ -96,6 +108,8 @@ export function AskForm() {
       }
       handleLine(buffer);
 
+      // The run is persisted by now, so re-render the server-side plan badge with the new remaining count.
+      if (gotFinal) router.refresh();
       if (!gotFinal) setRunError("The connection ended before an answer arrived. Please try again.");
     } catch {
       // A reset or unmount aborts the request on purpose; that is not an error to show.
@@ -117,6 +131,7 @@ export function AskForm() {
     setLoading(false);
     setInputError(null);
     setRunError(null);
+    setLimit(null);
     setSteps([]);
     setResult(null);
   }, []);
@@ -165,6 +180,8 @@ export function AskForm() {
         <QuestionHeader question={asked} />
         <AgentTrace steps={steps} loading={loading} />
 
+        {limit && <LimitPanel denial={limit} />}
+
         {runError && (
           <div className="mt-8">
             <StatePanel tone="error" title="We couldn't complete this research">
@@ -198,6 +215,41 @@ export function AskForm() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function formatReset(iso: string | null) {
+  if (!iso) return "midnight UTC";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "midnight UTC";
+  return `${d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short" })} (midnight UTC)`;
+}
+
+// 402 from /api/agent: the user is out of questions. Informational, not a server error.
+function LimitPanel({ denial }: { denial: UsageDenial }) {
+  if (denial.code === "FREE_LIMIT_REACHED") {
+    return (
+      <div className="mt-8">
+        <StatePanel title={`You've used all ${denial.usage.limit} free questions`}>
+          <p>Upgrade to Pro for {PRO_DAILY_LIMIT} questions a day. One-time ${PRO_PRICE_USD}, no subscription.</p>
+          <Link
+            href="/pricing"
+            className="mt-3 inline-block rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-canvas transition-opacity duration-150 hover:opacity-90"
+          >
+            Upgrade to Pro
+          </Link>
+        </StatePanel>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-8">
+      <StatePanel title="You've reached today's limit">
+        <p>
+          You&rsquo;ve used all {denial.usage.limit} questions for today. Your limit resets {formatReset(denial.usage.resetAt)}.
+        </p>
+      </StatePanel>
     </div>
   );
 }
