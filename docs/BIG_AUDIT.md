@@ -514,3 +514,20 @@ UI-only change. No agent, usage, Stripe, schema or API code touched.
 ### A11. History delete: deferred (2026-10-19)
 
 Not implemented. Finding recorded so it is not lost: `lib/usage.ts` `countSuccessfulRuns` counts `runs` rows with `status = 'success'` (Free: all time, Pro: since UTC midnight), so hard-deleting a run would refund quota, and `runs` has no DELETE policy for `authenticated` (`001_init.sql` revokes it). Proposed approach, pending approval and a Supabase migration run by a teammate: add a nullable `runs.deleted_at`, have delete set it server-side for the caller's own row, filter it out of History queries, and keep counting it for usage. Needs a `docs/DESIGN.md` note when built.
+
+### A10. Further manual Stripe checks, local (2026-10-19, branch `pranav-dev`)
+Verified by Pranav by hand against the local app with Stripe test mode:
+- Pro plan persists across log out and log in.
+- Cancelled checkout (clicked Upgrade, reached the Stripe page, returned without paying): plan stayed Free and the limits still applied.
+- Failed or declined payment was not tested; accepted for now because Stripe is simulated in test mode. The server logic for it is covered offline (only a verified, paid `checkout.session.completed` upgrades).
+
+Closed from A9's open list: logout/login persistence, cancel path. Still open locally: webhook replay (`stripe events resend`), and the real-database 402 at the Free limit.
+
+**PENDING after merge and deploy (cannot be checked until then)**
+Branch `pranav-dev` must first be merged with Yash's `main` (merge to `main` auto-deploys to Railway, so it needs explicit approval). Then Yash creates the keys and adds them to Railway. After that, check on the deployed URL:
+1. Railway env vars set: `STRIPE_SECRET_KEY` (`sk_test_...`), `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_APP_URL` (the deployed URL, not localhost). Leave `UNLIMITED_USER_EMAILS` unset in production.
+2. Stripe dashboard (Test mode): add a webhook endpoint `https://<railway-url>/api/stripe/webhook` for `checkout.session.completed`; its signing secret is the Railway `STRIPE_WEBHOOK_SECRET`. The local `stripe listen` secret will not work there.
+3. Full journey on Railway: Free user reaches the limit, sees the upgrade panel, pays with a test card, becomes Pro, plan persists after reload, asks again and the run is saved.
+4. Cancelled checkout on Railway leaves the plan unchanged.
+5. A webhook with a bad signature gets 400 on the deployed URL.
+6. Primary Sonnet demo question after upgrade.
