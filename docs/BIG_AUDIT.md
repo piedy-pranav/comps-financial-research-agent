@@ -488,3 +488,8 @@ Source of truth: `docs/RESEARCH_HISTORY_PLAN.md` (HIST-001 to HIST-007). Read-si
 **Deviations**: no `loading.tsx` (it would render without the app shell); not-found is an inline panel inside the shell (HTTP 200, not 404); the list renders after hydration so dates group in the viewer's time zone, so the SSR HTML has no rows; no "N steps · M sources" metadata on rows (would need the whole trace); saved follow-ups omitted (allowed by plan section 12).
 
 **Remaining risks**: the browser checks above; `status` only has `success|failed`, so the label depends on `trace.answer.kind` and legacy failed rows show "Error"; very old rows with a differing `trace.steps` shape lose their trace (answer text still shows).
+
+### A9. Live Stripe test-mode checkout, local (2026-10-19, branch `pranav-dev`)
+- Setup: Stripe sandbox account, real `sk_test_` key and CLI-issued `whsec_` in `.env.local`. The current CLI requires named events, so the forwarder is `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded --forward-to localhost:3000/api/stripe/webhook`.
+- Result (manual run by Pranav, with a second non-test account): entered a Stripe test card, completed checkout, the account became Pro with the 25-per-day allowance, and the `stripe listen` terminal showed the webhook delivered successfully. This closes the main "live checkout" item from A7 locally.
+- Still open: cancelled-checkout path, webhook replay (`stripe events resend`), the real-database 402 at the Free limit, plan persistence after logout/login, and everything on the deployed Railway URL (needs a dashboard webhook endpoint with its own signing secret). Update this entry as each is verified.
