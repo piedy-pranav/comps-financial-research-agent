@@ -12,7 +12,7 @@ Legend: ✅ built and tested · 🟡 built, not fully verified · ⬜ not starte
 |---|---|---|
 | 1. Foundation (Next.js, Supabase auth, schema, placeholder route, deploy) | Yash | ✅ done, live (per README) |
 | 2. ReAct agent + 4 tools + streaming route + minimal UI | Pranav | 🟡 built; tested on Haiku and Sonnet, and in the browser while logged in (A1 checks 1 to 4, Delta clarification). Audit fixes A1 to A3 applied. Not committed or deployed |
-| 3. Stripe Pro upgrade + usage limits | Hans, Pranav | ⬜ stubs only |
+| 3. Stripe Pro upgrade + usage limits | Hans, Pranav | 🟡 built and verified locally in Stripe test mode (A7, A8, A12, A13). Not merged; deployed-app checks pending (A13) |
 | 4. Frontend polish, QA, demo questions | Forum, Reyn | ⬜ (a working minimal UI exists to build on) |
 | 5. Write-up, slides, rehearsal | Forum, Reyn | ⬜ (notes for them in `docs/agent-notes.md`) |
 
@@ -134,20 +134,18 @@ Things that differ from the original docs or that were decided during the build.
 - [ ] Merge `pranav-dev` to `main` (auto-deploys), then run the handoff checks **on the live URL**: the 3-company margin question, a fake ticker, Adidas, a buy/sell request, an off-topic question. Check the response includes the trace.
 - [ ] Send the prompt and tool notes to Forum and Reyn (`docs/agent-notes.md` is ready).
 
-### 6.2 Step 3: payments and usage limits (Hans, Pranav). All stubs today
+### 6.2 Step 3: payments and usage limits (Hans, Pranav). Built locally; see A7, A8, A12, A13
 
-- [ ] `lib/usage.ts`: free users may ask while they have fewer than 3 `success` runs total; Pro users while fewer than 25 today. Return allowed / counts / daily reset time. `lib/plans.ts` already has the numbers.
-- [ ] Wire the check into `app/api/agent/route.ts` at the `TODO(step 3)` marker: return a 402 JSON `{ error, code }` for "free used up" and "daily limit". The UI already shows JSON errors; add a proper upgrade prompt.
-- [ ] `lib/stripe.ts`: Stripe client from `STRIPE_SECRET_KEY`. Install the `stripe` package (not installed yet).
-- [ ] `app/api/checkout/route.ts`: logged-in only, refuse if already Pro, create the one-time $19 Checkout session with the user id in metadata, success and cancel URLs from `NEXT_PUBLIC_APP_URL`.
-- [ ] `app/api/stripe/webhook/route.ts`: verify the signature (reject invalid), on `checkout.session.completed` set `plan = 'pro'` and `pro_since`, idempotent. Needs the raw request body.
-- [ ] Pricing page: "Upgrade" button wired to checkout, "You're on Pro" when already Pro, cancelled-payment return works.
-- [ ] Stripe account in test mode with the $19 product (Hans). Stripe keys and webhook secret to Yash for Railway.
-- [ ] Verify: test card 4242 4242 4242 4242 upgrades the account on the live URL; a free user with 3 successes sees the upgrade prompt, not an error; a cancelled checkout leaves nothing broken.
+- [x] `lib/usage.ts`, wired into `/api/agent` with an HTTP 402 JSON before streaming (A7).
+- [x] `lib/stripe.ts`, `/api/checkout`, `/api/stripe/webhook` (verified signature, idempotent) (A7).
+- [x] Pricing page: Upgrade button, "You're on Pro", cancelled and success-return states (A7).
+- [x] Local live test: test card upgrades a second account to Pro; Pro persists across logout/login; cancelled checkout leaves the plan Free (A12, A13).
+- [ ] Local: replay a webhook (`stripe events resend`) and see the 402 upgrade panel for a real Free user at the limit.
+- [ ] **After merge and deploy:** Stripe keys, webhook endpoint and `NEXT_PUBLIC_APP_URL` on Railway (Yash), then the deployed-app checks listed in A13.
 
 ### 6.3 Step 4: frontend and QA (Forum, Reyn)
 
-- [ ] Plan badge with questions left (Free: 2 of 3 left, Pro: 23 of 25 today). Today's badge only shows the plan name. Needs usage data from Step 3.
+- [x] Plan badge with questions left (Free: "2 left", Pro: "23 left today"). Done in Step 3 (A7).
 - [ ] Polish the question box, answer view and trace; loading and error states; pricing page.
 - [ ] Edge-case test list on the live URL; fix or report every bug. No console errors on the main flow.
 - [ ] Pick 3 to 4 demo questions that work every time (the four example buttons are candidates; verify each on Sonnet).
@@ -452,7 +450,7 @@ Requirements: AUTH-002, PLAN-001 to PLAN-005, PAY-001 to PAY-008, SEC-003, UI-00
 - `.env.local` currently holds placeholder values for `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, so no real Stripe call has been made.
 - The `ConfirmingUpgrade` polling, the 402 panels and the badge counts were type-checked and built, not exercised in a browser.
 
-**Live checks still pending**: browser journey B01 (free to limit to upgrade UI to checkout with `4242 4242 4242 4242` to Pro to ask again, run persisted, plan persists after reload); cancelled checkout leaves plan Free; Stripe CLI or dashboard webhook replay; a real run through `/api/agent` hitting a real 402 from the real database; primary Sonnet demo question after upgrade.
+**Live checks still pending (superseded: see A12 and A13 for what has since been verified and what remains)**: browser journey B01 (free to limit to upgrade UI to checkout with `4242 4242 4242 4242` to Pro to ask again, run persisted, plan persists after reload); cancelled checkout leaves plan Free; Stripe CLI or dashboard webhook replay; a real run through `/api/agent` hitting a real 402 from the real database; primary Sonnet demo question after upgrade.
 
 ### A8. Unlimited test account (2026-10-19, branch `pranav-dev`)
 - `UNLIMITED_USER_EMAILS` (comma-separated, server env only) exempts matching accounts from limits. `checkUsage` matches it against the email stored in `profiles`, never a browser value; unset means no exemptions, so production is unaffected unless someone sets it on Railway. Badge shows "unlimited". Added to `.env.example`; `try-usage.ts` now 18/18.
@@ -489,11 +487,6 @@ Source of truth: `docs/RESEARCH_HISTORY_PLAN.md` (HIST-001 to HIST-007). Read-si
 
 **Remaining risks**: the browser checks above; `status` only has `success|failed`, so the label depends on `trace.answer.kind` and legacy failed rows show "Error"; very old rows with a differing `trace.steps` shape lose their trace (answer text still shows).
 
-### A12. Live Stripe test-mode checkout, local (2026-10-19, branch `pranav-dev`)
-- Setup: Stripe sandbox account, real `sk_test_` key and CLI-issued `whsec_` in `.env.local`. The current CLI requires named events, so the forwarder is `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded --forward-to localhost:3000/api/stripe/webhook`.
-- Result (manual run by Pranav, with a second non-test account): entered a Stripe test card, completed checkout, the account became Pro with the 25-per-day allowance, and the `stripe listen` terminal showed the webhook delivered successfully. This closes the main "live checkout" item from A7 locally.
-- Still open: cancelled-checkout path, webhook replay (`stripe events resend`), the real-database 402 at the Free limit, plan persistence after logout/login, and everything on the deployed Railway URL (needs a dashboard webhook endpoint with its own signing secret). Update this entry as each is verified.
-
 ### A10. Expandable sidebar (2026-10-19, branch `pranav-dev`, not merged)
 
 UI-only change. No agent, usage, Stripe, schema or API code touched.
@@ -515,16 +508,21 @@ UI-only change. No agent, usage, Stripe, schema or API code touched.
 
 Not implemented. Finding recorded so it is not lost: `lib/usage.ts` `countSuccessfulRuns` counts `runs` rows with `status = 'success'` (Free: all time, Pro: since UTC midnight), so hard-deleting a run would refund quota, and `runs` has no DELETE policy for `authenticated` (`001_init.sql` revokes it). Proposed approach, pending approval and a Supabase migration run by a teammate: add a nullable `runs.deleted_at`, have delete set it server-side for the caller's own row, filter it out of History queries, and keep counting it for usage. Needs a `docs/DESIGN.md` note when built.
 
-### A13. Further manual Stripe checks, local (2026-10-19, branch `pranav-dev`)
-Verified by Pranav by hand against the local app with Stripe test mode:
+### A12. Live Stripe test-mode checkout, local (2026-10-19, branch `pranav-dev`)
+- Setup: Stripe sandbox account, real `sk_test_` key and CLI-issued `whsec_` in `.env.local`. The current CLI requires named events, so the forwarder is `stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded --forward-to localhost:3000/api/stripe/webhook`.
+- Result (manual run by Pranav, with a second non-test account): entered a Stripe test card, completed checkout, the account became Pro with the 25-per-day allowance, and the `stripe listen` terminal showed the webhook delivered successfully. This closes the main "live checkout" item from A7 locally.
+- Further checks are in A13.
+
+### A13. Further manual Stripe checks, local, and post-deploy pending list (2026-10-19, branch `pranav-dev`)
+Verified by Pranav by hand against the local app in Stripe test mode:
 - Pro plan persists across log out and log in.
 - Cancelled checkout (clicked Upgrade, reached the Stripe page, returned without paying): plan stayed Free and the limits still applied.
-- Failed or declined payment was not tested; accepted for now because Stripe is simulated in test mode. The server logic for it is covered offline (only a verified, paid `checkout.session.completed` upgrades).
+- A failed or declined payment was not tested; accepted for now because Stripe is simulated in test mode. The server logic is covered offline: only a verified, paid `checkout.session.completed` upgrades.
 
-Closed from A12's open list: logout/login persistence, cancel path. Still open locally: webhook replay (`stripe events resend`), and the real-database 402 at the Free limit.
+Still open locally: webhook replay (`stripe events resend`), and the 402 upgrade panel for a real Free user at the limit against the real database.
 
 **PENDING after merge and deploy (cannot be checked until then)**
-Branch `pranav-dev` must first be merged with Yash's `main` (merge to `main` auto-deploys to Railway, so it needs explicit approval). Then Yash creates the keys and adds them to Railway. After that, check on the deployed URL:
+`pranav-dev` must first be merged with Yash's `main` (merging to `main` auto-deploys to Railway, so it needs explicit approval). Then Yash creates the keys and adds them to Railway. After that, check on the deployed URL:
 1. Railway env vars set: `STRIPE_SECRET_KEY` (`sk_test_...`), `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_APP_URL` (the deployed URL, not localhost). Leave `UNLIMITED_USER_EMAILS` unset in production.
 2. Stripe dashboard (Test mode): add a webhook endpoint `https://<railway-url>/api/stripe/webhook` for `checkout.session.completed`; its signing secret is the Railway `STRIPE_WEBHOOK_SECRET`. The local `stripe listen` secret will not work there.
 3. Full journey on Railway: Free user reaches the limit, sees the upgrade panel, pays with a test card, becomes Pro, plan persists after reload, asks again and the run is saved.
