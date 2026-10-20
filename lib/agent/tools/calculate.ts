@@ -21,6 +21,7 @@ math.import(
 );
 
 const MAX_EXPRESSION_LENGTH = 200;
+const MAX_CALCULATIONS = 50; // per call; extras are reported as errors, never silently dropped
 const ALLOWED = /^[0-9+\-*/().^\s e]+$/i; // digits, + - * / ^, parentheses, exponent notation (no % or commas)
 const STRAY_E = /(?<![0-9.])e|e(?![+\-]?[0-9])/i; // an "e" must sit inside a number like 2.5e10
 
@@ -72,7 +73,7 @@ export const calculate: ToolDef<Input> = {
         },
         calculations: {
           type: "array",
-          description: "Up to 20 calculations.",
+          description: "Up to 50 calculations per call. Put every derived metric you need in one call.",
           items: {
             type: "object",
             properties: {
@@ -93,11 +94,13 @@ export const calculate: ToolDef<Input> = {
     if (!Array.isArray(input.calculations) || !input.calculations.length) {
       return { ok: false, error: "Pass at least one calculation." };
     }
-    const items = input.calculations.slice(0, 20);
-    const results = items.map((c) => ({
+    // Beyond the cap each item comes back as an explicit error, so the model knows what to resend.
+    const results = input.calculations.map((c, i) => ({
       label: c.label,
       expression: c.expression,
-      ...evaluateExpression(String(c.expression)),
+      ...(i < MAX_CALCULATIONS
+        ? evaluateExpression(String(c.expression))
+        : { error: `Not computed: at most ${MAX_CALCULATIONS} calculations per call. Send this one again in a new call.` }),
     }));
     for (const r of results) {
       if ("result" in r) {

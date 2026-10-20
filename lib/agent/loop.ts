@@ -1,8 +1,9 @@
 // The ReAct loop (see docs/ARCHITECTURE.md, "How the agent works").
 // Each iteration the model either calls tools (Thought -> Action -> Observation) or calls
-// final_answer. Capped at 6 iterations; the last one only offers final_answer so the user always
+// final_answer. Capped at 6 iterations (8 for why/driver questions, see intent.ts); the last one only offers final_answer so the user always
 // gets what was found plus what is missing. runAgent never throws.
 import Anthropic from "@anthropic-ai/sdk";
+import { maxIterationsFor } from "./intent";
 import { buildUserMessage, SYSTEM_PROMPT } from "./prompt";
 import {
   ALL_TOOL_DEFINITIONS,
@@ -15,7 +16,6 @@ import {
 } from "./tools";
 import type { AgentResult, AnswerKind, FinalAnswer, ToolName, TraceStep } from "./types";
 
-const MAX_ITERATIONS = 6;
 const DEADLINE_MS = 90_000; // after this, the next model call may only submit final_answer
 const HARD_LIMIT_MS = 115_000; // nothing may run past this (route maxDuration is 120s)
 const MODEL_CALL_TIMEOUT_MS = 60_000;
@@ -134,16 +134,17 @@ export async function runAgent(
     { role: "user", content: buildUserMessage(question) },
   ];
   let nudged = false;
+  const maxIterations = maxIterationsFor(question); // 6, or 8 for why/driver questions
 
-  for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
+  for (let iteration = 1; iteration <= maxIterations; iteration++) {
     if (signal?.aborted) return failedResult("error", "Cancelled.", trace);
-    const lastStep = iteration === MAX_ITERATIONS || Date.now() - start > DEADLINE_MS;
+    const lastStep = iteration === maxIterations || Date.now() - start > DEADLINE_MS;
     const tools = lastStep ? [FINAL_ANSWER_TOOL] : ALL_TOOL_DEFINITIONS;
     if (lastStep) {
       emit({
         type: "info",
         iteration,
-        text: "Step limit reached. Writing the answer with what was found.",
+        text: "Writing the answer from the evidence gathered.",
       });
     }
 
@@ -263,12 +264,12 @@ export async function runAgent(
       };
     });
 
-    const nextIsLast = iteration + 1 === MAX_ITERATIONS || Date.now() - start > DEADLINE_MS;
+    const nextIsLast = iteration + 1 === maxIterations || Date.now() - start > DEADLINE_MS;
     const content: Anthropic.Beta.BetaContentBlockParam[] = [...toolResultBlocks];
     if (nextIsLast) {
       content.push({
         type: "text",
-        text: "This is your final step: call final_answer now with what you have, and say what is missing.",
+        text: "Call final_answer now using the evidence gathered. State what is established, what the sources support, and what remains uncertain (for example \"I did not find reliable evidence explaining ...\"). Never mention steps, budgets, time limits, or what you did not get to search.",
       });
     }
     // All tool_results go in ONE user message.
@@ -277,7 +278,7 @@ export async function runAgent(
 
   return failedResult(
     "insufficient_data",
-    "I couldn't finish this question in the allowed steps. Try asking about fewer companies or metrics.",
+    "I couldn't finish this question. Try asking about fewer companies or metrics.",
     trace,
   );
 }

@@ -3,9 +3,10 @@ process.env.ANTHROPIC_API_KEY = "test-key";
 process.env.LLM_MODEL = "claude-haiku-5-5";
 
 import { modelCallTimeoutMs, runAgent, toolPhaseBudgetMs } from "../lib/agent/loop";
+import { isDriverAnalysis, maxIterationsFor } from "../lib/agent/intent";
 
 type Reply = { content: unknown[]; stop_reason: string };
-let calls: { tools: string[] }[] = [];
+let calls: { tools: string[]; lastUser: string }[] = [];
 let script: Reply[] = [];
 let failStatus = 0; // when set, the mocked endpoint answers with this HTTP error
 
@@ -18,7 +19,11 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     });
   }
   const body = JSON.parse(String(init?.body));
-  calls.push({ tools: (body.tools ?? []).map((t: { name: string }) => t.name) });
+  const lastMsg = body.messages?.[body.messages.length - 1]?.content;
+  calls.push({
+    tools: (body.tools ?? []).map((t: { name: string }) => t.name),
+    lastUser: JSON.stringify(lastMsg ?? ""),
+  });
   const reply = script[Math.min(calls.length - 1, script.length - 1)];
   return new Response(
     JSON.stringify({
@@ -49,6 +54,26 @@ async function main() {
   check("last step: 6 model calls", calls.length === 6, calls.length);
   check("last step: only final_answer offered", calls[5].tools.join() === "final_answer", calls[5].tools);
   check("last step: model text kept (not generic message)", r.status === "failed" && r.answer.answerMarkdown.includes("partial data"), r.answer);
+
+  // Driver questions get 8 iterations, everything else stays at 6; the last one is always final_answer only.
+  calls = [];
+  script = [1, 2, 3, 4, 5, 6, 7].map((i) => toolUse(`td_${i}`));
+  script.push({ stop_reason: "end_turn", content: [{ type: "text", text: "Partial driver analysis." }] });
+  r = await runAgent("Why did Warner Music Group's operating margin change?", () => {});
+  check("driver question: 8 model calls", calls.length === 8, calls.length);
+  check("driver question: only final_answer on call 8, not before", calls[7].tools.join() === "final_answer" && calls[6].tools.length > 1, calls.map((c) => c.tools.length));
+  check("driver question: forced-final nudge sent on call 7's result, free of budget wording", /Never mention steps/.test(calls[7].lastUser) && !/step limit|ran out/i.test(calls[7].lastUser), calls[7].lastUser);
+  check("driver question: trace info has no 'step limit' wording", !r.trace.some((t) => t.type === "info" && /step limit/i.test(t.text)), r.trace.filter((t) => t.type === "info"));
+  calls = [];
+  r = await runAgent("Compare Nike and Lululemon gross margin", () => {});
+  check("standard question still capped at 6 calls", calls.length === 6, calls.length);
+
+  // intent helper
+  const yes = ["Why did VF Corp's operating margin fall?", "What drove Nike's gross-margin recovery?", "What caused the slowdown in revenue?", "What explains the gap between Nike and Under Armour?", "Explain the change in Lululemon's margin", "What are the reasons for the decline?", "Has margin recovered?", "What led to the drop?", "Why has Lululemon outperformed Nike?", "What changed operationally between FY2023 and FY2025?"];
+  const no = ["Compare Nike and Lululemon's revenue over five years.", "What was Nike's revenue in FY2025?", "Show five years of inventory for Under Armour", "Should I buy Nike stock?", "Write me a poem about cats", "Compare gross margin for NKE and LULU"];
+  check("intent: driver wordings detected", yes.every(isDriverAnalysis), yes.filter((q) => !isDriverAnalysis(q)));
+  check("intent: plain questions not detected", no.every((q) => !isDriverAnalysis(q)), no.filter(isDriverAnalysis));
+  check("ceilings 8 / 6", maxIterationsFor(yes[0]) === 8 && maxIterationsFor(no[0]) === 6, [maxIterationsFor(yes[0]), maxIterationsFor(no[0])]);
 
   // Normal early text-only reply still gets one nudge
   calls = [];

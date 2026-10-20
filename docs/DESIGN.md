@@ -240,3 +240,5 @@ The trace shown should remain concise and product-oriented rather than becoming 
 - One mechanical change: `search_news` accepts a year window because Tavily's default last-12-months filter cannot reach a past decline.
 
 Given up: the ordering and the causal-language rules are model behavior, verified by `scripts/try-driver.ts` on Haiku, not enforced by code. Sonnet verification is still needed for the demo model.
+
+Update (driver loop): the ceiling is 8 iterations for why/driver questions and 6 for the rest, chosen by a small wording check rather than an LLM classifier (cheap, deterministic, testable; a false positive only raises a ceiling, the model still decides whether to search). The 8 is insurance, not the plan: batching calculations, grouping years into material phases and issuing the phase searches in parallel keep the normal run at about 5 steps, and the deadline is not raised. The cost is a longer worst case on driver questions (bounded by the same 90 s soft deadline).

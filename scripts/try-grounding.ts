@@ -33,6 +33,18 @@ let r = resolveFinalAnswer(
 );
 check("clean answer unchanged", r.kind === "answer" && r.answerMarkdown === "GM 46.0% [1]" && r.tables[0].rows[0][1] === "46.0% [1]" && !r.notes.length, r);
 
+// 1b. Raw news-N markers are rewritten to [n]; unknown news keys are dropped, never left as dead text
+{
+  const c = ctxWith(REAL);
+  const nk = c.registerNews({ title: "T", url: "https://example.com/n", publishedDate: null, domain: "example.com" });
+  const rr = resolveFinalAnswer(
+    { ...base, kind: "answer", answer_markdown: `GM 46.0% [1]. Reported driver [${nk}]. Made up [news-77].`, tables: [], citations: [{ n: 1, key: REAL }] },
+    c,
+  );
+  check("raw news-N marker rewritten to [n] and its source added", rr.sources.some((x) => x.type === "news") && !/news-\d/.test(rr.answerMarkdown) && /driver \[\d\]/.test(rr.answerMarkdown), rr);
+  check("unknown news-N marker removed", !rr.answerMarkdown.includes("news-77"), rr.answerMarkdown);
+}
+
 // 2. Unknown key dropped, its marker removed, other source kept
 r = resolveFinalAnswer(
   { ...base, kind: "answer", answer_markdown: "A 1% [1] and B 2% [2].", tables: [], citations: [{ n: 1, key: REAL }, { n: 2, key: FAKE }] },

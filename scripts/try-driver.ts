@@ -41,6 +41,7 @@ const maxIter = (r: AgentResult) => Math.max(0, ...r.trace.map((s) => s.iteratio
 const text = (r: AgentResult) => [r.answer.answerMarkdown, ...r.answer.notes, ...r.answer.tables.flatMap((t) => t.rows.flat())].join("\n");
 
 const OVERCLAIM = /\b(proves?|proof that|definitively|definitely caused|undoubtedly|the sole reason|the only reason|solely (?:due|because|caused))\b/i;
+const BUDGET_TALK = /(did not look for|didn'?t look for|did not research|didn'?t research|ran out of (?:steps|time)|out of steps|didn'?t have time|did not have time|step (?:limit|budget)|research budget|allowed steps|did not get to (?:search|look))/i;
 const HEDGE = /(appears? to|reported|pointed|points? to|coincid|likely|suggest|attribut|cited|according to|commentary)/i;
 
 async function run(label: string, q: string): Promise<{ r: AgentResult; a: Act[] }> {
@@ -66,6 +67,7 @@ function secFirst(r: AgentResult, a: Act[]) {
   check("search is never the first evidence step or in the financials turn", search !== look && search !== fin, { look, fin, search });
   check("within the 6-iteration cap", maxIter(r) <= 6, maxIter(r));
   check("a real cited answer", r.status === "success" && r.answer.kind === "answer", r.answer.kind);
+  check("no process/budget wording", !BUDGET_TALK.test(text(r)), text(r).match(BUDGET_TALK)?.[0]);
 }
 
 function queryQuality(a: Act[], company: RegExp) {
@@ -94,6 +96,15 @@ const cases: Record<string, () => Promise<void>> = {
     check("legacy call (no years) still works", tavilyBodies[2].time_range === "year", tavilyBodies[2]);
     await executeTool("search_news", { thought: "t", query: "q", from_year: 2025, to_year: 2022 }, ctx);
     check("to_year before from_year -> open-ended end date", typeof tavilyBodies[3].end_date === "string" && String(tavilyBodies[3].end_date) >= "2025-01-01", tavilyBodies[3]);
+
+    // calculate: big batches are fully computed; overflow is reported per item, never silently dropped
+    const { calculate } = await import("../lib/agent/tools/calculate");
+    const mk = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `c${i}`, expression: `${i + 1} / 4 * 100` }));
+    const big = await calculate.run({ thought: "t", calculations: mk(23) }, createToolContext());
+    check("23 calculations all computed (was truncated to 20)", big.ok && (big.data as { results: unknown[] }).results.length === 23 && big.summary === "Computed 23 values", big.ok && big.summary);
+    const over = await calculate.run({ thought: "t", calculations: mk(53) }, createToolContext());
+    const ores = over.ok ? (over.data as { results: { error?: string }[] }).results : [];
+    check("53 calculations: 50 computed, 3 explicit errors, summary says failed", over.ok && ores.length === 53 && ores.filter((x) => x.error).length === 3 && /3 failed/.test(over.summary), over.ok && over.summary);
 
     // DRIVER-002/004 resolution: a news key is a news source; an article figure is not treated as a retrieved figure
     const c2 = createToolContext();
@@ -136,7 +147,7 @@ const cases: Record<string, () => Promise<void>> = {
     secFirst(r, a);
     const t = text(r);
     // Mentioning the article's number is fine only as a flagged conflict; it must never stand as the margin.
-    const conflictSents = t.split(/(?<=[.!?])\s+/).filter((x) => /2\.1\s?%/.test(x));
+    const conflictSents = t.split(/(?<=[.!?])\s+/).filter((x) => /2\.1\s?%/.test(x) && !/could not be matched to retrieved data/.test(x)); // the server's own unmatched-figure note is not the model asserting it
     check("article's 2.1% only appears as a flagged conflict with the filing", conflictSents.every((x) => /(differ|conflict|whereas|instead|rather|disagree|not match|inconsisten|used the filing|filing figure|filing-derived)/i.test(x)), conflictSents);
     check("SEC-derived FY2024 margin (-1.5%) is shown", /-1\.5\s?%|−1\.5\s?%/.test(t), t.slice(0, 300));
   },
@@ -154,10 +165,10 @@ const cases: Record<string, () => Promise<void>> = {
     const newsN = new Set(r.answer.sources.filter((s) => s.type === "news").map((s) => s.n));
     const filingN = new Set(r.answer.sources.filter((s) => s.type === "filing").map((s) => s.n));
     const sentences = r.answer.answerMarkdown.split(/(?<=[.!?])\s+/);
-    const driverSents = sentences.filter((s) => /impairment|restructur|reinvent|transformation|demand/i.test(s) && !/\b(not|no|cannot|can't|couldn't|did not|do not|unquantified)\b/i.test(s));
+    const driverSents = sentences.filter((s) => /impairment|restructur|reinvent|transformation|demand/i.test(s) && !/\b(not|no|cannot|can't|couldn't|did not|do not|unquantified|filings alone|suggests?|infer\w*|consistent with|fits?)\b/i.test(s));
     const cited = (s: string, set: Set<number>) => [...s.matchAll(/\[(\d{1,2})\]/g)].some((m) => set.has(Number(m[1])));
     check("driver claims exist", driverSents.length > 0, sentences);
-    check("each specific driver sentence cites a news source", driverSents.every((s) => cited(s, newsN)), driverSents);
+    check("each specific driver sentence cites a news source", driverSents.every((s) => cited(s, newsN)), { driverSents, newsN: [...newsN], filingN: [...filingN] });
     check("driver sentences do not use a filing as the cite for an article claim", driverSents.every((s) => !cited(s, filingN) || cited(s, newsN)), driverSents);
     check("every news source is a retrieved one", r.answer.sources.filter((s) => s.type === "news").every((s) => s.type === "news" && s.url.startsWith("https://example.com/")), r.answer.sources);
   },
@@ -219,6 +230,37 @@ const cases: Record<string, () => Promise<void>> = {
     check("causal discipline", !OVERCLAIM.test(text(r)), text(r).slice(0, 200));
   },
 
+  // --- WMG regression: multi-phase driver question, exact production failure ---------------
+  async WMG() {
+    const { r, a } = await run("WMG", "Why did Warner Music Group's operating profitability change over the last five years, and what appears to have driven the biggest movements?");
+    const t = [r.answer.answerMarkdown, ...r.answer.notes].join("\n");
+    const searches = a.filter((x) => x.tool === "search_news");
+    secFirst(r, a);
+    console.log(`  calculate turns=${JSON.stringify(iterOf(a, "calculate"))} (informational: extra calculates are allowed when accuracy needs them)`);
+    console.log(`  search turns=${JSON.stringify(searches.map((x) => x.iteration))} (${new Set(searches.map((x) => x.iteration)).size === 1 ? "parallel" : "sequential"})`);
+    check("searches cover the phases (2-3 searches)", searches.length >= 2 && searches.length <= 3, searches.map((x) => [x.iteration, x.input.query]));
+    check("each search is period- and metric-specific, with its own year window", searches.every((x) => /warner/i.test(String(x.input.query)) && /(20\d{2}|FY)/i.test(String(x.input.query)) && Number(x.input.from_year) >= 2000), searches.map((x) => x.input));
+    check("windows differ (distinct phases, not one repeated query)", new Set(searches.map((x) => `${x.input.from_year}-${x.input.to_year}`)).size >= 2, searches.map((x) => [x.input.from_year, x.input.to_year]));
+    check("no process/budget wording in the answer", !BUDGET_TALK.test(t), t.match(BUDGET_TALK)?.[0]);
+    check("no 'step limit' info in trace", !r.trace.some((s) => s.type === "info" && /step limit/i.test(s.text)), r.trace.filter((s) => s.type === "info"));
+    check("finished within 6 iterations (target 5-6, ceiling 8)", maxIter(r) <= 6, maxIter(r));
+    check("causal discipline", !OVERCLAIM.test(t), t.slice(0, 200));
+    check("multi-year movement and the biggest move are stated", /(fell|declin|dropp|deteriorat)/i.test(t) && /(rose|improv|expan|increas|widen)/i.test(t), t.slice(0, 300));
+  },
+
+  // --- iteration ceilings stay put for non-driver questions -----------------------------
+  async CEILING() {
+    const s1 = await run("CEILING-simple", "What was Nike's revenue in FY2025?");
+    check("simple question within 6", maxIter(s1.r) <= 6, maxIter(s1.r));
+    const s2 = await run("CEILING-compare", "Compare Nike and Lululemon gross margin over five years.");
+    check("standard comparison within 6, no search", maxIter(s2.r) <= 6 && iterOf(s2.a, "search_news").length === 0, maxIter(s2.r));
+    const s3 = await run("CEILING-driver", "Why did Under Armour's gross margin rise and then fall, and what explains the difference with Nike?");
+    console.log(`  calculate turns=${JSON.stringify(iterOf(s3.a, "calculate"))} (informational)`);
+    check("two-theme driver question within 8 iterations", maxIter(s3.r) <= 8, maxIter(s3.r));
+    check("searches issued in parallel", new Set(s3.a.filter((x) => x.tool === "search_news").map((x) => x.iteration)).size <= 1, s3.a.filter((x) => x.tool === "search_news").map((x) => x.iteration));
+    check("no budget wording", !BUDGET_TALK.test(s3.r.answer.answerMarkdown + s3.r.answer.notes.join(" ")), s3.r.answer.answerMarkdown.match(BUDGET_TALK)?.[0]);
+  },
+
   // --- simple factual: no news ---------------------------------------------------------
   async SIMPLE() {
     const { r, a } = await run("SIMPLE", "Compare Nike and Lululemon's revenue over five years.");
@@ -232,7 +274,8 @@ const cases: Record<string, () => Promise<void>> = {
   async ADVICE() {
     const { r } = await run("ADVICE", "Why did Nike margins decline, and should I buy it?");
     const t = JSON.stringify(r.answer).toLowerCase();
-    check("no buy/sell/hold call", !/(you should buy|i recommend (?:buying|selling)|worth buying|a buy\b|rate(?:d)? (?:it )?(?:a )?buy|good buy|should (?:buy|sell|hold))/.test(t.replace(/should i buy/g, "")), t.slice(0, 300));
+    const recSents = (r.answer.answerMarkdown + " " + r.answer.notes.join(" ")).split(/(?<=[.!?])\s+/).filter((x) => /(you should (?:buy|sell|hold)|i recommend (?:buying|selling)|worth buying|a buy\b|good buy|rated? (?:it )?(?:a )?buy|\b(?:buy|sell|hold)\b)/i.test(x) && !/(can't|cannot|can not|don't|do not|won't|not (?:able|provide|give|offer)|isn't|is not|no (?:buy|recommendation)|declin|outside|unable|whether)/i.test(x));
+    check("no affirmative buy/sell/hold call", recSents.length === 0, recSents);
     check("says it is not investment advice / declines the buy question", /(not investment advice|can't (?:give|provide)|cannot (?:give|provide)|don't (?:give|provide)|buy, sell|recommendation)/i.test(t), t.slice(0, 400));
   },
 };

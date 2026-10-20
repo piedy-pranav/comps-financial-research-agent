@@ -150,7 +150,7 @@ Model is selected by `LLM_MODEL`.
 
 ### AGENT-002 — Bounded loop
 The agent has:
-- max 6 iterations
+- max 6 iterations; max 8 for why/driver questions (deterministic wording check in `lib/agent/intent.ts`, no LLM classifier). The deadline, hard limit, tool timeouts, retry and forced-final step are the same for both ceilings
 - ~90 second internal deadline
 - route max duration 120 seconds (`maxDuration` is only a hint to deployment platforms; Railway's `next start` does not enforce it, so the loop enforces its own limits: 90s soft deadline, 115s hard limit)
 
@@ -242,6 +242,7 @@ All arithmetic is delegated to a restricted calculator tool.
 - only digits, `+ - * / ^`, parentheses and exponent notation are accepted (no `%`, no commas)
 - reject unsafe expressions
 - one bad expression does not fail the whole batch
+- up to 50 calculations per call; any beyond that come back as per-item errors telling the model to resend them (they are never silently dropped; before A11 the cap was a silent 20)
 - non-finite results are errors
 
 ### TOOL-006 — `search_news`
@@ -306,6 +307,15 @@ Each sentence stating a reported driver ends with the `news-N` marker it came fr
 
 ### DRIVER-008 — Limited evidence
 If `search_news` fails or returns nothing relevant, the quantified filing analysis is still returned as `kind: "answer"` with a plain statement that contextual evidence was limited. No invented drivers. A tool error is shown to the model as an error, never as an empty result (AGENT-008).
+
+### DRIVER-010 — Efficient trajectory and iteration ceiling
+Driver questions may use up to 8 iterations (normal questions stay at 6); the wall-clock deadline is unchanged. The extra budget is insurance for a clarification, a missing-metric fallback or a second search pass. The target run is 5 steps: lookup, financials, one batched `calculate` (margins, YoY and percentage-point changes, implied operating expenses and their margin, for all years and companies), parallel `search_news` calls (one per material phase or company, at most 3 in total), final answer.
+
+### DRIVER-011 — Material phases
+Years are grouped into phases (for example improvement and deterioration). Movements of about two percentage points or more are material and get searched; sub-point movements are folded into the neighbouring phase or left out. A broad "what drove the changes" question covers every material phase.
+
+### DRIVER-012 — No process-limit language
+Answers never say "I did not look for", "I ran out of steps" or mention step/time budgets. Weak evidence is stated as "I did not find reliable evidence explaining ...". The forced-final step, its trace line and its nudge use neutral wording and ask for what is established, what is supported and what remains uncertain.
 
 ### DRIVER-009 — Boundaries unchanged
 Buy/sell/hold and price-prediction handling, prompt-injection wrapping (SEC-004), iteration/deadline/retry limits and non-answer kinds are unchanged. A mixed "why did margins fall, and should I buy" question is answered as the diagnostic plus a statement that Comps gives no buy/sell advice.

@@ -220,7 +220,7 @@ function toSource(n: number, meta: FilingMeta | NewsMeta): Source {
   };
 }
 
-const ACCESSION_MARKER = /(\s?)\[(\d{10}-\d{2}-\d{6})\]/g; // models sometimes cite the raw key instead of [n]
+const ACCESSION_MARKER = /(\s?)\[(\d{10}-\d{2}-\d{6}|news-\d{1,3})\]/g; // models sometimes cite the raw key (filing accession or news-N) instead of [n]
 const NUMBER_MARKER = /\s?\[(\d{1,2})\]/g;
 const ANY_MARKER = /\[(\d{1,2})\]/g;
 // A figure worth checking: has $, %, a decimal point, or a B/M suffix (plain integers like "3 companies" are skipped).

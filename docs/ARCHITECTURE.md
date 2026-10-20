@@ -15,7 +15,7 @@ Comps is a single Next.js app deployed as one service on Railway. The frontend, 
 1. The user submits a question. `/api/agent` checks the Supabase session, then checks usage: a free user must have fewer than 3 successful questions, and a Pro user fewer than 25 today. If not, it returns an upgrade or daily-limit message.
 2. The agent loop starts. Each turn, the LLM either picks a tool (Thought, then Action) or writes the final answer.
 3. The tool runs and its result goes back to the LLM as the Observation. Each step is streamed to the browser as newline-delimited JSON so the user sees the trace live.
-4. The loop stops when the LLM gives a final answer or hits the cap of 6 iterations.
+4. The loop stops when the LLM gives a final answer or hits the cap of 6 iterations (8 for why/driver questions).
 5. The run (question, answer, trace, status) is saved to the `runs` table. Only successful runs count toward usage, so a failed question never uses up one of the user's questions.
 
 ## How the Pro upgrade flows through the system
@@ -36,7 +36,7 @@ Row-level security is on for both tables, so a user can only read their own rows
 
 ### Diagnostic ("Why?") questions
 
-Same ReAct loop, no extra stage. The prompt makes the order numbers-first: `lookup_ticker` then `get_financials` (revenue, operating income, gross profit and cost of revenue) then one batched `calculate`, and only then `search_news` with a query built from the years and metric just found (peer questions: one search per company, in parallel; recovery questions: decline and recovery periods searched separately). Typical run: 4 to 5 iterations, 17 to 35 s. Filings stay the source of every figure; `news-N` keys support only reported drivers. A failed search leaves the quantified answer intact. See SPEC section 6A.
+Same ReAct loop, no extra stage. The prompt makes the order numbers-first: `lookup_ticker` then `get_financials` (revenue, operating income, gross profit and cost of revenue) then one batched `calculate`, and only then `search_news` with a query built from the years and metric just found (peer questions: one search per company, in parallel; recovery questions: decline and recovery periods searched separately). The iteration ceiling is 8 for these questions (`lib/agent/intent.ts`, wording match) and 6 otherwise; all derived metrics go into one `calculate` call and the per-phase searches run in parallel in one turn, so the typical run is 5 iterations, 20 to 35 s. Final-step wording never exposes the step budget. Filings stay the source of every figure; `news-N` keys support only reported drivers. A failed search leaves the quantified answer intact. See SPEC section 6A.
 
 ## Agent tools
 
