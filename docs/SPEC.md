@@ -354,7 +354,7 @@ Structured tables render as HTML tables, not markdown-parsed table text.
 Citation markers link to a numbered source list. SEC sources link to the 10-K document itself on EDGAR (resolved from the SEC submissions API); if that lookup fails they fall back to the filing's EDGAR index page.
 
 ### UI-004 — Non-answer rendering
-Non-answer kinds use a neutral information treatment rather than misleading table/source chrome.
+Non-answer kinds use a neutral information treatment rather than misleading table/source chrome. Exception: `insufficient_data` keeps any tables and sources the agent returned, so partial research is not discarded (UI rebuild spec, section 24).
 
 ### UI-007 — Clarification choices
 For a `clarification` with options, the UI shows each option as a button (same style as the example questions) and a text box for typing the exact company name or ticker. Clicking asks the rewritten question; the text box substitutes the typed name for the ambiguous one.

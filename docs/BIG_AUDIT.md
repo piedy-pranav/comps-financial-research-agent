@@ -391,3 +391,32 @@ Closes F1 (Delta on Sonnet). SPEC AGENT-009 and UI-007 added.
 - Eval A02 literal wording ("Assuming you meant") and an eval runner (`scripts/run-evals.ts`): still open.
 - Step 3 (usage limits and Stripe) is next, following `docs/step3-plan.md`.
 - Merge to `main` and the live-URL handoff checks still need approval.
+
+### A6. Step 2.5 UI rebuild (2026-10-20, uncommitted, branch `pranav-dev`)
+
+Source of truth: `docs/COMPS_UI_REBUILD_PERPLEXITY_FINANCE.md`. Frontend only: no change under `lib/`, `app/api/`, `supabase/`, `proxy.ts`, `package.json` or the lockfile (`git diff` confirms). No new dependency: icons are ~12 inline SVGs, fonts stay Geist.
+
+**What changed**
+- **Tokens and shell:** `app/globals.css` holds the dark token set (CSS variables mapped to Tailwind colors via `@theme inline`; `focus-visible` ring in the base layer). `AppShell` (server) = 60px rail + sticky 52px top bar + content, used by `/` and `/pricing`; auth pages stay outside it with a dark card. The old light `SiteHeader` is deleted. Below `md` the rail becomes a compact row in the top bar. New: `components/layout/{app-shell,sidebar,top-bar,user-menu,events}`, `components/ui/icons`, `components/billing/plan-badge`.
+- **Research workspace** (`components/ask-form.tsx`): empty state (heading, large composer, example rows) then a document layout (question heading, trace, answer) with a sticky docked composer. The NDJSON parsing block and its event handling are unchanged. State is now `draft` (composer) and `asked` (question being researched); errors are split into `inputError` (rejected before any request, inline) and `runError` (panel with Try again). New: an `AbortController`, so the sidebar's New question and unmount cancel the request (the server cancels the run, N7). Enter sends, Shift+Enter adds a line.
+- **Trace** (`agent-trace.tsx`): same `toRows` and id matching; compact running list with status icons, collapsing to "Researched in N steps" (aria-live while running).
+- **Answer** (`answer-view.tsx` + `components/research/*`): research-note prose; dense tables from `answer.tables` (fiscal-year label and period end shown as a muted second line, missing values as a muted dash with the original text kept as the label, horizontal scroll inside the table region); citation markers link to resolved sources; understated Notes; Sources rows (company, form, FY, period end, filed, SEC EDGAR, external link); full-width follow-up rows that ask on click (exactly the returned follow-ups); clarification choices (`ClarifyChoices`) moved to its own file with unchanged behavior.
+- **Non-answer states:** clarification (heading plus rows plus text box), not_covered, declined, off_topic, insufficient_data, error. Each has a fixed title and keeps the model's own text. Tables and sources show only for `answer` and `insufficient_data` (SPEC UI-004 refined). The error kind and run errors get Try again.
+- **Pricing and plan badge:** visual shell per spec section 25. Pro "Upgrade to Pro" and Team "Contact us" are disabled with an honest caption; nothing simulates payment. The plan badge shows only Free or Pro (the `remaining` prop exists for Step 3; no count is faked).
+
+**Deviations from the UI spec:** no History item (nothing to link to); the sidebar holds only New question and Pricing, the account menu is in the top bar (needed on mobile); the 4 verified example questions are kept (spec shows 3); `Asked just now` is static text; Inter not added (Geist already loaded); focus ring uses the accent token.
+
+**Tests run**
+- `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass. All offline suites pass (`try-grounding` 29, `try-stream` 8, `try-loop` 14, `try-news` 6, `try-infra` 21, `try-clarify-ui` 8; the last had two assertions updated for the new markup, behavior unchanged).
+- Browser (Playwright, 1440, 820 and 390px, 58 checks, 0 console errors) against a temporary harness that mocked `/api/agent` with real captured Sonnet output and ran the real `AskForm` stream parser. The harness is deleted, not committed. Covered: empty state; example click; live trace mid-stream, then collapse; heading as document title; 3 tables with period-end line; markers scroll to sources; 9 external `noopener` source links; exactly 3 follow-ups and click re-asks; docked composer in view and not covering the last follow-up; trace expand with no raw JSON; New question reset; clarification (option click asks the ticker question, typed name substitutes); not covered, declined, off topic, insufficient (partial table and sources kept); stream error with Try again; HTTP error (402-style JSON message); dropped connection; submit disabled when empty; pricing and login render; no horizontal overflow at any width; wide 4-column table scrolls inside its region on mobile.
+- Bugs found and fixed during review: global focus outline drew a hard box inside the composer (unlayered CSS beat `outline-none`); "Missing (transition period...)" cells showed text instead of a dash.
+
+**Not verified**
+- The real logged-in flow: the harness cannot exercise login, the Supabase plan lookup in the top bar, the account menu's Log out, or a real `/api/agent` run through the new UI. Needs a manual pass with `npm run dev`.
+- The sidebar's New question button on the real `/` page (the harness lives at another path, so the test fired the reset event directly; the button's own logic is a one-line check).
+- Screen reader behavior beyond roles, labels and aria-live; keyboard order was not tested by hand.
+- Next's dev-only indicator overlaps the bottom-left in screenshots; it does not exist in production builds.
+
+**Remaining risks**
+- `AnswerView` splits "(...ISO date...)" parentheticals into a second line by pattern; unusual model phrasing falls back to showing the text whole (correct, just less tidy).
+- Sticky composer uses a gradient fade for separation; it is functional, not decorative, but is the only gradient in the UI.
