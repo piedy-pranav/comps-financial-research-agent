@@ -590,3 +590,13 @@ Trigger: a Warner Music Group answer said "I did not look for drivers of the FY2
 **Final A11 numbers** (Haiku 5.5, live): WMG 3 of 3 runs: 5 iterations, 26.7 to 29.3 s, one calculate turn, two searches in the same turn (parallel). Earlier samples before the final prompt tweak: 4 to 5 iterations, 1 of 6 sequential searches. Two-company two-theme driver question: 5 to 6 iterations, 34 to 42 s, sometimes a second calculate (now allowed). Driver set D001-008: 5 to 6 iterations, 15 to 42 s. Simple 3 iterations, standard comparison 4 (no search). All regression suites pass (grounding 31, loop 22, news 6, stream 8, infra 21, history 24, clarify-ui 8, usage 18, injection, edge); lint, tsc, build pass.
 
 **Known flakiness**: roughly 1 in 3 earlier samples left one summary driver sentence without its `[n]` (prompt now has a concrete example; 3 consecutive clean runs after, not proof); one sample in a dozen used "did not research" (prompt rule 11 forbids it, no server-side scrub). In the final edge sweep the Adidas case ended in `not_covered` after three lookups without fetching Nike (model variation on an existing edge case, not part of this change).
+
+### A12. Trace step count matches the visible steps (2026-10-20, branch `pranav-dev`, not merged)
+
+Trigger: a VF vs Ralph Lauren driver answer showed "Researched in 5 steps" above a list of 9 tool calls (2 lookups, 2 financials, 1 calculate, 4 searches over 5 loop rounds). The label counted loop rounds (a decision recorded as N8 in an earlier audit entry); the list shows tool calls, so the two disagreed.
+
+**Changed** (UI only, `components/agent-trace.tsx`): the count is now the number of tool-call rows listed, so the label always equals what the user can expand. While running, the header reads "Researching · N steps so far" (no count until the first tool call). Saved results on `/history/[id]` use the same component, so they show the same count. Loop, prompts, tools and schema untouched.
+
+**Test**: `scripts/try-clarify-ui.ts` N8 check inverted to the new contract (3 parallel + 1 later call = 4 steps with 4 rows) plus singular, live-count and live-empty checks; 11/11 pass. `try-history` 24/24, lint, `tsc --noEmit`, build pass. Browser check NOT RUN: rendering verified with `renderToStaticMarkup` only.
+
+**Deviation**: reverses the earlier "steps = loop rounds" decision (N8); that count is still available as the highest `iteration` in the trace if wanted. A run with many parallel calls now reads as a larger number than the iteration cap (up to 8 rounds can contain more tool calls).

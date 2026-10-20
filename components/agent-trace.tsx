@@ -31,12 +31,12 @@ function toRows(steps: TraceStep[]): Row[] {
   return rows;
 }
 
-// Live research progress while running; collapses to "Researched in N steps" once the answer arrives.
+// Live research progress while running; collapses to "Researched in N steps" (N = tool calls listed) once the answer arrives.
 export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: boolean }) {
   if (!steps.length && !loading) return null;
   const rows = toRows(steps);
-  // A "step" is one round of the agent loop (it may run several tools at once), not a single tool call.
-  const stepCount = new Set(steps.filter((s) => s.type === "action").map((s) => s.iteration)).size;
+  // A "step" is one visible tool call (one action row below), so the count always matches the list.
+  const stepCount = rows.filter((r) => r.kind === "action").length;
 
   return (
     <details open={loading} className="group mt-8 border-y border-line-subtle">
@@ -44,7 +44,7 @@ export function AgentTrace({ steps, loading }: { steps: TraceStep[]; loading: bo
         <ChevronRightIcon size={14} className="text-ink-3 transition-transform duration-150 group-open:rotate-90" />
         {loading ? (
           <span className="flex items-center gap-2">
-            Researching
+            Researching{stepCount > 0 ? ` · ${stepCount} step${stepCount === 1 ? "" : "s"} so far` : ""}
             <SpinnerIcon size={13} className="text-ink-3" />
           </span>
         ) : (
