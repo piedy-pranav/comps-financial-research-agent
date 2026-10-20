@@ -45,7 +45,7 @@ export async function AppShell({
       >
         Skip to content
       </a>
-      <Sidebar />
+      <Sidebar userId={user?.id} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar section={section} user={user} plan={plan} remaining={remaining} unlimited={unlimited} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">

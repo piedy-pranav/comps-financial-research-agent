@@ -35,11 +35,12 @@ export function Logo({ className = "" }: { className?: string }) {
 
 // Expanded (icons + labels) by default; the toggle collapses it to the icon rail. The choice is remembered per browser.
 const COLLAPSE_KEY = "comps:sidebar-collapsed";
+const storageKey = (userId?: string | null) => `${COLLAPSE_KEY}:${userId ?? "anon"}`;
 const COLLAPSE_EVENT = "comps:sidebar-toggle";
 
-function readCollapsed() {
+function readCollapsed(key: string) {
   try {
-    return localStorage.getItem(COLLAPSE_KEY) === "1";
+    return localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
@@ -54,11 +55,13 @@ function subscribeCollapsed(cb: () => void) {
   };
 }
 
-function useCollapsed() {
-  const collapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, () => false);
+// Remembered per account, so a new account on the same browser starts expanded.
+function useCollapsed(userId?: string | null) {
+  const key = storageKey(userId);
+  const collapsed = useSyncExternalStore(subscribeCollapsed, () => readCollapsed(key), () => false);
   const toggle = () => {
     try {
-      localStorage.setItem(COLLAPSE_KEY, collapsed ? "0" : "1");
+      localStorage.setItem(key, collapsed ? "0" : "1");
     } catch {
       // Storage blocked: the toggle just won't persist.
     }
@@ -73,9 +76,9 @@ const rowClass = (active: boolean, collapsed: boolean) =>
   } ${active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"}`;
 
 // Desktop sidebar. Only real destinations: no placeholders.
-export function Sidebar() {
+export function Sidebar({ userId }: { userId?: string | null }) {
   const { pathname, newQuestion } = useNav();
-  const { collapsed, toggle } = useCollapsed();
+  const { collapsed, toggle } = useCollapsed(userId);
   const items = [
     { href: "/history", label: "History", icon: <HistoryIcon size={18} /> },
     { href: "/pricing", label: "Pricing", icon: <TagIcon size={18} /> },
