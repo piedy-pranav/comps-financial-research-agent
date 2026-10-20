@@ -75,6 +75,12 @@ async function main() {
     denial,
   );
 
+  const unl: UsageStore = { ...fakeStore("free", rows(50, "success", NOW)), isUnlimited: async () => true };
+  r = await checkUsage(U, unl, NOW);
+  check("unlimited account allowed past the Free limit", r.allowed && r.unlimited && r.code === null, r);
+  r = await checkUsage(U, { ...fakeStore("free", rows(3, "success", NOW)), isUnlimited: async () => false }, NOW);
+  check("non-listed account still limited", !r.allowed && !r.unlimited, r);
+
   let threw = false;
   try {
     await checkUsage(U, { getPlan: async () => "free", countSuccessfulRuns: async () => { throw new Error("db down"); } }, NOW);

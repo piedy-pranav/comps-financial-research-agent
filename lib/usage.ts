@@ -11,7 +11,18 @@ export type UsageStore = {
   getPlan(userId: string): Promise<Plan>;
   // Successful runs for the user, optionally only those created at or after `since`.
   countSuccessfulRuns(userId: string, since?: Date): Promise<number>;
+  // Optional: true for test accounts exempt from limits (see unlimitedEmails).
+  isUnlimited?(userId: string): Promise<boolean>;
 };
+
+// Comma-separated emails in UNLIMITED_USER_EMAILS bypass limits. Server-side env only, matched against the
+// email stored in profiles (never a browser-supplied value). Leave unset in production.
+function unlimitedEmails(): string[] {
+  return (process.env.UNLIMITED_USER_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 export const supabaseUsageStore: UsageStore = {
   async getPlan(userId) {
@@ -22,6 +33,13 @@ export const supabaseUsageStore: UsageStore = {
       .maybeSingle();
     if (error) throw new Error(`profile lookup failed: ${error.message}`);
     return data?.plan === "pro" ? "pro" : "free";
+  },
+  async isUnlimited(userId) {
+    const list = unlimitedEmails();
+    if (list.length === 0) return false;
+    const { data, error } = await createAdminClient().from("profiles").select("email").eq("id", userId).maybeSingle();
+    if (error) throw new Error(`profile lookup failed: ${error.message}`);
+    return !!data?.email && list.includes(data.email.trim().toLowerCase());
   },
   async countSuccessfulRuns(userId, since) {
     let query = createAdminClient()
@@ -51,7 +69,7 @@ export function evaluateUsage(plan: Plan, used: number, now: Date): UsageResult 
   const remaining = Math.max(0, limit - used);
   const allowed = used < limit;
   if (allowed) {
-    return { allowed, plan, used, limit, remaining, code: null, message: null, resetAt: null };
+    return { allowed, plan, used, limit, remaining, code: null, message: null, resetAt: null, unlimited: false };
   }
   if (plan === "pro") {
     return {
@@ -63,6 +81,7 @@ export function evaluateUsage(plan: Plan, used: number, now: Date): UsageResult 
       code: "DAILY_LIMIT_REACHED",
       message: `You've used all ${PRO_DAILY_LIMIT} questions for today. Your limit resets at midnight UTC.`,
       resetAt: nextUtcMidnight(now).toISOString(),
+      unlimited: false,
     };
   }
   return {
@@ -74,6 +93,7 @@ export function evaluateUsage(plan: Plan, used: number, now: Date): UsageResult 
     code: "FREE_LIMIT_REACHED",
     message: `You've used all ${FREE_QUESTION_LIMIT} free questions. Upgrade to Pro to keep going.`,
     resetAt: null,
+    unlimited: false,
   };
 }
 
@@ -83,6 +103,9 @@ export async function checkUsage(
   now: Date = new Date(),
 ): Promise<UsageResult> {
   const plan = await store.getPlan(userId);
+  if (await store.isUnlimited?.(userId)) {
+    return { allowed: true, plan, used: 0, limit: Infinity, remaining: Infinity, code: null, message: null, resetAt: null, unlimited: true };
+  }
   const used = await store.countSuccessfulRuns(userId, plan === "pro" ? utcDayStart(now) : undefined);
   return evaluateUsage(plan, used, now);
 }

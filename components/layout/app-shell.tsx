@@ -21,11 +21,13 @@ export async function AppShell({
 
   let plan: Plan | null = null;
   let remaining: number | undefined;
+  let unlimited = false;
   if (user) {
     try {
       const usage = await checkUsage(user.id);
       plan = usage.plan;
-      remaining = usage.remaining;
+      remaining = usage.unlimited ? undefined : usage.remaining;
+      unlimited = usage.unlimited;
     } catch (err) {
       // The badge must never take the page down. Fall back to the plan alone, without a count.
       console.error("[app-shell] usage lookup failed", err instanceof Error ? err.message : err);
@@ -45,7 +47,7 @@ export async function AppShell({
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar section={section} user={user} plan={plan} remaining={remaining} />
+        <TopBar section={section} user={user} plan={plan} remaining={remaining} unlimited={unlimited} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
           {children}
         </main>

@@ -9,11 +9,13 @@ export function TopBar({
   user,
   plan,
   remaining,
+  unlimited,
 }: {
   section: string;
   user: { email: string | null } | null;
   plan: Plan | null;
   remaining?: number;
+  unlimited?: boolean;
 }) {
   return (
     <header className="sticky top-0 z-10 flex h-(--topbar-height) shrink-0 items-center justify-between gap-3 border-b border-line-subtle bg-canvas/95 px-4 backdrop-blur sm:px-6">
@@ -28,7 +30,7 @@ export function TopBar({
       <div className="flex items-center gap-3">
         {user ? (
           <>
-            {plan && <PlanBadge plan={plan} remaining={remaining} />}
+            {plan && <PlanBadge plan={plan} remaining={remaining} unlimited={unlimited} />}
             <UserMenu email={user.email} />
           </>
         ) : (

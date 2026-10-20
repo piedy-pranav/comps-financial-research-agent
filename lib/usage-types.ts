@@ -13,6 +13,7 @@ export type UsageResult = {
   code: UsageCode | null;
   message: string | null;
   resetAt: string | null; // ISO timestamp of the next UTC midnight; Pro only
+  unlimited: boolean; // dev/test accounts listed in UNLIMITED_USER_EMAILS; never true in production unless set
 };
 
 // The `usage` object inside the HTTP 402 body (SPEC PLAN-004).

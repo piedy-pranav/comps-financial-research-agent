@@ -453,3 +453,8 @@ Requirements: AUTH-002, PLAN-001 to PLAN-005, PAY-001 to PAY-008, SEC-003, UI-00
 - The `ConfirmingUpgrade` polling, the 402 panels and the badge counts were type-checked and built, not exercised in a browser.
 
 **Live checks still pending**: browser journey B01 (free to limit to upgrade UI to checkout with `4242 4242 4242 4242` to Pro to ask again, run persisted, plan persists after reload); cancelled checkout leaves plan Free; Stripe CLI or dashboard webhook replay; a real run through `/api/agent` hitting a real 402 from the real database; primary Sonnet demo question after upgrade.
+
+### A8. Unlimited test account (2026-10-19, branch `pranav-dev`)
+- `UNLIMITED_USER_EMAILS` (comma-separated, server env only) exempts matching accounts from limits. `checkUsage` matches it against the email stored in `profiles`, never a browser value; unset means no exemptions, so production is unaffected unless someone sets it on Railway. Badge shows "unlimited". Added to `.env.example`; `try-usage.ts` now 18/18.
+- Created `test@ucla.edu` in the dev Supabase project (email pre-confirmed) and set it in the local `.env.local` only. The password is not stored in the repo.
+- Finding: the checkout button fails locally because `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in `.env.local` are still the `.env.example` placeholders.
