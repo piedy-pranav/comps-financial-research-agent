@@ -34,6 +34,10 @@ Comps is a single Next.js app deployed as one service on Railway. The frontend, 
 
 Row-level security is on for both tables, so a user can only read their own rows. Only the server (using the service key) can change `plan`.
 
+### Diagnostic ("Why?") questions
+
+Same ReAct loop, no extra stage. The prompt makes the order numbers-first: `lookup_ticker` then `get_financials` (revenue, operating income, gross profit and cost of revenue) then one batched `calculate`, and only then `search_news` with a query built from the years and metric just found (peer questions: one search per company, in parallel; recovery questions: decline and recovery periods searched separately). Typical run: 4 to 5 iterations, 17 to 35 s. Filings stay the source of every figure; `news-N` keys support only reported drivers. A failed search leaves the quantified answer intact. See SPEC section 6A.
+
 ## Agent tools
 
 | Tool | Source | What it returns |
@@ -41,7 +45,7 @@ Row-level security is on for both tables, so a user can only read their own rows
 | `lookup_ticker` | SEC company tickers file | Fuzzy-matches the name or ticker, so typos like "Nikee" still work. Returns the top 3 matches with a confidence score, or "not found". One clear match gets used (and the answer says "assuming you meant..."), close matches get sent back to the user to pick |
 | `get_financials` | SEC EDGAR company facts API | Annual values for a metric (revenue, cost of revenue, gross profit, operating income, net income, operating cash flow, inventory), each with its fiscal year, period end date, and the filing it came from |
 | `calculate` | Runs locally | Margins, growth rates, and other math, so the model never does arithmetic in its head. Uses a safe math parser, never `eval` |
-| `search_news` | Tavily | Recent headlines and links to explain a change in the numbers |
+| `search_news` | Tavily | Headlines and links to explain a change in numbers already quantified from filings. Takes an optional calendar-year window (`from_year`, `to_year`) so it can reach the period being explained; defaults to the last 12 months |
 | `final_answer` | Ends every run | The structured answer: text with `[n]` citation markers, comparison tables, sources, 3 follow-up questions, and notes. Citation keys the tools never returned are dropped, so every source shown is real |
 
 ## SEC data gotchas (for whoever builds the tools)

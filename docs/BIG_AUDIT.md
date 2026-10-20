@@ -529,3 +529,36 @@ Still open locally: webhook replay (`stripe events resend`), and the 402 upgrade
 4. Cancelled checkout on Railway leaves the plan unchanged.
 5. A webhook with a bad signature gets 400 on the deployed URL.
 6. Primary Sonnet demo question after upgrade.
+
+### A10. Analyst Driver / "Why?" analysis (2026-10-20, branch `pranav-dev`, not merged)
+
+Source of truth: `docs/ANALYST_DRIVER_ANALYSIS_PLAN.md`; requirements SPEC section 6A (DRIVER-001 to 009). Prompt-level feature on the existing ReAct loop. Loop, limits (6 iterations, 90 s, retry), `FinalAnswer` schema, citation registry, history, Stripe, usage and the database schema were not touched.
+
+**What changed**
+- `lib/agent/prompt.ts`: one-line `search_news` rule replaced; new "Why questions" section (10 rules): numbers first (financials, then one batched `calculate`, then search), identify the changing years, specific query from what was found using the company's common name, one search per company for peers, separate decline and recovery periods, filings authoritative over article figures, fact / inference / reported-driver separation, `[news-N]` marker on each reported-driver sentence, cautious causal language, graceful fallback when search is weak or fails, specific follow-ups. Also asks for `cost_of_revenue` alongside `gross_profit` for margins (VF reports no `GrossProfit` tag). Plain figure/comparison questions do not search unless the user explicitly asks for news.
+- `lib/agent/tools/searchNews.ts`: added `from_year`/`to_year` (calendar-year window to Tavily `start_date`/`end_date`; 0/missing/invalid falls back to `time_range: "year"`, so old callers work). Description reworded for driver use.
+- `scripts/try-driver.ts` (new), docs: SPEC 6A + TOOL-006, ARCHITECTURE, DESIGN trade-off 8.
+
+**Deviation from the plan**: the plan says no tool changes, but `search_news` as built used `time_range: "year"`, so a question about FY2022-24 asked in Oct 2026 could only retrieve articles from the last 12 months (verified against live Tavily: window returns 2023-24 company releases, the default returns 2026 items). The year window is the minimal fix; it is the only code change outside the prompt.
+
+**Tests** (Haiku 5.5, real Anthropic + SEC; Tavily real for 001/007/008/simple/advice, mocked for 002/004/005/006)
+- `scripts/try-driver.ts`: offline 7/7 (date window, legacy call, news vs filing sources, fabricated news key dropped, article-only figure flagged); DRIVER-001 9/9, -002 6/6, -004 8/8, -005 5/5, -006 4/4, -007 8/8, -008 8/8; SIMPLE 3/3 (no `search_news` for "Compare Nike and Lululemon revenue" or "Nike revenue in FY2025"); ADVICE 2/2.
+- Regressions: grounding 29/29, loop 14/14, news 6/6, stream 8/8, infra 21/21, history 24/24, clarify-ui 8/8, usage all passed (needs `NODE_OPTIONS=--conditions=react-server`), edge suite and `try-injection` (no PWNED, no buy call). `npm run lint`, `npx tsc --noEmit`, `npm run build`: pass.
+
+**Bugs found and fixed during the work**
+- First prompt put citation markers only in the table; driver sentences were uncited (DRIVER-004 failed). Prompt now requires the `[news-N]` marker on each reported-driver sentence.
+- A query using the SEC legal name ("V F Corp") returned other companies' articles; prompt now says use the common name.
+- Tightened rule made the agent refuse the edge case "Also search news" (user asked explicitly); rule now allows search on an explicit request.
+- Peer question put two companies in one query; now one search per company, in parallel. Extra sequential `calculate` calls pushed search late; prompt says batch.
+- Several first-draft test regexes were too narrow (accepted "failed", "has not returned to its FY2022 level", and an article figure mentioned only as a flagged conflict). Fixed the tests, not the thresholds.
+
+**Live trajectories** (3 required cases, `scripts/try-agent.ts`): VF decline + recovery: lookup, financials, calculate (11 values), 2 parallel searches (decline FY2023-24, recovery FY2025-26), answer; 4-5 iterations, 30.4 s. Lululemon vs Nike: 2 lookups, 2 financials, 1 calculate (15 values), 2 parallel searches (one per company), answer; 5 iterations, 30.7 s. Nike vs Lululemon revenue: no search, 4 iterations, 17.9 s. Across all driver runs: 16 to 36 s, 4 to 6 iterations; mean of the 3 required cases 26.3 s (target 60 s).
+
+**Remaining risks / limitations**
+- Browser checks: NOT RUN (no browser and no logged-in test session available here). The `/api/agent` request flow was checked via `runAgent`, the stream suite and the history suite, not through the UI. News sources are rendered by the existing `SourcesList`; whether they are visually distinguished from filings was not inspected.
+- Behavior is prompt-driven on Haiku; not yet verified on Sonnet 5.5 (the demo model).
+- Search snippets are 300 characters, so drivers are often thin or only from proxy/earnings-release pages. In some runs the agent honestly reported no reliable driver evidence (Lululemon vs Nike structural "why stronger" is not explained, only the recent compression).
+- Figures quoted from articles (for example a tariff cost or an impairment amount) are not in the figure registry and are flagged by the existing "could not be matched" note rather than blocked.
+- Two sequential searches (decline then recovery) can use all 6 iterations (seen once on DRIVER-001). Parallel searches are preferred by the prompt but not enforced.
+- Mixed "why ... and should I buy" returns `kind: "answer"` with the diagnostic and a "can't give buy/sell advice" statement (counts as a successful question); previously undefined behavior, boundary itself unchanged.
+- Nike has no `operating_income` in the fetched data (pre-existing), so operating-margin comparisons with Nike are unavailable.

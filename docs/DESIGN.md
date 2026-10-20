@@ -229,3 +229,14 @@ Given up:
 - the ability to hide every intermediate model/tool step
 
 The trace shown should remain concise and product-oriented rather than becoming a dump of provider internals.
+
+### 8. Two-stage diagnostics inside the same loop instead of a "driver analysis" tool
+
+"Why did X change?" is answered in two stages by prompt rules, not code: first quantify the movement from SEC facts (`get_financials`, `calculate`), then search for context aimed at the years and metric just found.
+
+- Why conditional: a search per question would add cost and latency and let irrelevant commentary into plain figure comparisons. Search runs only for diagnostic intent or an explicit request for news.
+- Why numbers first: searching first anchors the answer on whatever commentary is available. Fixing the period first makes the query specific and the explanation checkable against the data.
+- Facts versus context: filing figures keep the verified filing citations; articles can only support reported drivers via `news-N`. Inference from the data is labelled as inference.
+- One mechanical change: `search_news` accepts a year window because Tavily's default last-12-months filter cannot reach a past decline.
+
+Given up: the ordering and the causal-language rules are model behavior, verified by `scripts/try-driver.ts` on Haiku, not enforced by code. Sonnet verification is still needed for the demo model.

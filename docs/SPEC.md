@@ -249,6 +249,8 @@ News is optional explanatory context, not the source of core reported financial 
 
 Search content is wrapped and explicitly treated as untrusted third-party text.
 
+Input is `{thought, query, from_year, to_year}`. `from_year`/`to_year` (calendar years, 2000 to now) become a Tavily `start_date`/`end_date` window so a search can reach the period being explained; 0, missing or invalid values fall back to the last 12 months (older callers sending only `thought` and `query` keep working).
+
 ### TOOL-007 — Tool timeout + retry
 Each external/tool execution has a timeout. A thrown error or timeout is retried once by the executor. A normal tool-level negative result such as "not found" is not retried as though it were a transport failure, and neither are errors retrying cannot fix (`NonRetryableError`: bad credentials, missing config, 403/404/401). A timed-out attempt is aborted so the retry does not run alongside it.
 
@@ -272,6 +274,41 @@ Missing years/metrics must be named in notes or prose. Never interpolate unless 
 
 ### CITE-005 — Fiscal-year clarity
 When compared companies have different fiscal year ends, period-end dates are displayed so the comparison is not presented as perfectly calendar-aligned.
+
+---
+
+---
+
+## 6A. Driver ("Why?") analysis
+
+Source: `docs/ANALYST_DRIVER_ANALYSIS_PLAN.md`. Implemented in the system prompt (`lib/agent/prompt.ts`, "Why questions") and the `search_news` date window. No new tool, answer field, loop change, limit change or schema.
+
+### DRIVER-001 — Intent
+Why / what caused / what drove / what explains / has it recovered questions are diagnostic. Plain figure or comparison questions are not and must not call `search_news` (unless the user explicitly asks for news or context).
+
+### DRIVER-002 — Numbers first
+For a diagnostic question the movement is established from `get_financials` and `calculate` (the changing years identified) before any `search_news`. `search_news` is never the first evidence step and never shares a turn with `get_financials`. Expected shape: `lookup_ticker`, `get_financials`, `calculate`, `search_news`, `final_answer`, inside the existing 6-iteration cap.
+
+### DRIVER-003 — Specific, period-aligned queries
+Queries name the company (common name), metric, direction and fiscal years, and set `from_year`/`to_year`. Peer questions search each company separately; recovery questions may search the decline and recovery periods separately. At most two searches per question.
+
+### DRIVER-004 — Filings stay authoritative
+Every financial figure comes from `get_financials`/`calculate`. An article figure that conflicts with the filing-derived figure never replaces it (existing CITE-003 flags article-only figures as unmatched).
+
+### DRIVER-005 — Fact, inference, reported cause
+Answers keep three claim types distinct: filing facts, analytical inference from retrieved data (labelled as inference), and reported drivers. Lead with the takeaway; state what remains uncertain. Deterioration and recovery are explained separately.
+
+### DRIVER-006 — Causal language
+Cautious language ("appears to", "reported factors included", "coincided with"); no "proves", "definitely caused", "sole reason"; no quantified effect for a cause unless a source gives it.
+
+### DRIVER-007 — Contextual citations
+Each sentence stating a reported driver ends with the `news-N` marker it came from. Filing keys do not support article claims. Unknown keys are dropped as before (CITE-002).
+
+### DRIVER-008 — Limited evidence
+If `search_news` fails or returns nothing relevant, the quantified filing analysis is still returned as `kind: "answer"` with a plain statement that contextual evidence was limited. No invented drivers. A tool error is shown to the model as an error, never as an empty result (AGENT-008).
+
+### DRIVER-009 — Boundaries unchanged
+Buy/sell/hold and price-prediction handling, prompt-injection wrapping (SEC-004), iteration/deadline/retry limits and non-answer kinds are unchanged. A mixed "why did margins fall, and should I buy" question is answered as the diagnostic plus a statement that Comps gives no buy/sell advice.
 
 ---
 
