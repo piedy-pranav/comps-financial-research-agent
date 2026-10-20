@@ -1,12 +1,96 @@
 @import "tailwindcss";
 
+/* Design tokens (docs/COMPS_UI_REBUILD_PERPLEXITY_FINANCE.md, section 5). One dark theme only. */
+:root {
+  color-scheme: dark;
+
+  --bg: #151514;
+  --bg-elevated: #1b1b1a;
+  --bg-subtle: #20201f;
+  --bg-hover: #272725;
+
+  --border: #31312f;
+  --border-subtle: #292927;
+  --border-strong: #3b3b38;
+
+  --text-primary: #f1f1ef;
+  --text-secondary: #b6b6b1;
+  --text-muted: #8a8a85;
+  --text-faint: #6b6b66;
+
+  --accent: #9bc4b1;
+  --accent-hover: #acd1bf;
+  --accent-soft: rgba(155, 196, 177, 0.1);
+
+  --positive: #62b77a;
+  --negative: #d76b73;
+  --warning: #d4a85a;
+
+  --sidebar-width: 60px;
+  --topbar-height: 52px;
+  --content-max: 1120px;
+  --answer-max: 820px;
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-canvas: var(--bg);
+  --color-raised: var(--bg-elevated);
+  --color-subtle: var(--bg-subtle);
+  --color-hover: var(--bg-hover);
+  --color-line: var(--border);
+  --color-line-subtle: var(--border-subtle);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text-primary);
+  --color-ink-2: var(--text-secondary);
+  --color-ink-3: var(--text-muted);
+  --color-ink-4: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-pos: var(--positive);
+  --color-neg: var(--negative);
+  --color-warn: var(--warning);
+}
+
+@theme {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 }
 
 body {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--bg);
+  color: var(--text-primary);
   font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(155, 196, 177, 0.28);
+}
+
+/* In the base layer so component classes (outline-none on the composer, which draws its own focus ring) win. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* Dark, thin scrollbars for wide tables and long pages. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
