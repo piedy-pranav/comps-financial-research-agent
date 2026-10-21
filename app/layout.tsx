@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: "Benchmark a company against its peers using SEC filings.",
 };
 
-export const viewport = { themeColor: "#151514" };
+export const viewport = { themeColor: "#f7f5ef" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

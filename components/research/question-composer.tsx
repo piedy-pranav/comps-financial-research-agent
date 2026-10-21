@@ -53,7 +53,7 @@ export function QuestionComposer({
       type="submit"
       disabled={!canSubmit}
       aria-label={loading ? "Researching" : "Ask"}
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-canvas transition-colors duration-150 hover:bg-white disabled:bg-subtle disabled:text-ink-4"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-canvas transition-colors duration-150 hover:bg-accent-hover disabled:bg-subtle disabled:text-ink-4"
     >
       {loading ? <SpinnerIcon size={15} /> : <ArrowUpIcon size={16} />}
     </button>

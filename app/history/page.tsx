@@ -20,7 +20,7 @@ export default async function HistoryPage() {
     <AppShell section="History" requireUser>
       <div className="mx-auto w-full max-w-(--answer-max) flex-1 px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
         <header>
-          <h1 className="text-2xl font-medium text-ink sm:text-[28px]">History</h1>
+          <h1 className="text-2xl font-semibold text-ink sm:text-[28px]">History</h1>
           <p className="mt-2 text-[15px] text-ink-3">Your recent research threads</p>
         </header>
 

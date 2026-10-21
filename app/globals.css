@@ -1,30 +1,33 @@
 @import "tailwindcss";
 
-/* Design tokens (docs/COMPS_UI_REBUILD_PERPLEXITY_FINANCE.md, section 5). One dark theme only. */
+/* Design tokens. Warm Neutral light theme only: color-scheme stays light even when the OS prefers dark.
+   Text tiers are darkened slightly from the base palette so small text meets WCAG AA on every surface. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  --bg: #151514;
-  --bg-elevated: #1b1b1a;
-  --bg-subtle: #20201f;
-  --bg-hover: #272725;
+  --bg: #f7f5ef;
+  --bg-sidebar: #efeee6;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f2f1ea;
+  --bg-hover: #e8e7dd;
 
-  --border: #31312f;
-  --border-subtle: #292927;
-  --border-strong: #3b3b38;
+  --border: #daddd3;
+  --border-subtle: #e4e5dc;
+  --border-strong: #c6cbbf;
 
-  --text-primary: #f1f1ef;
-  --text-secondary: #b6b6b1;
-  --text-muted: #8a8a85;
-  --text-faint: #6b6b66;
+  --text-primary: #26372e;
+  --text-secondary: #4e5b52;
+  --text-muted: #5d6b61;
+  --text-faint: #64705e;
 
-  --accent: #9bc4b1;
-  --accent-hover: #acd1bf;
-  --accent-soft: rgba(155, 196, 177, 0.1);
+  --accent: #305444;
+  --accent-hover: #264437;
+  --accent-soft: rgba(48, 84, 68, 0.08);
 
-  --positive: #62b77a;
-  --negative: #d76b73;
-  --warning: #d4a85a;
+  /* Semantic audit/status colors: restrained green, muted amber, muted red. */
+  --positive: #2f6b47;
+  --negative: #a23b3b;
+  --warning: #8a5b0e;
 
   --sidebar-width: 60px;
   --sidebar-width-open: 220px;
@@ -38,6 +41,7 @@
   --font-mono: var(--font-geist-mono);
 
   --color-canvas: var(--bg);
+  --color-sidebar: var(--bg-sidebar);
   --color-raised: var(--bg-elevated);
   --color-subtle: var(--bg-subtle);
   --color-hover: var(--bg-hover);
@@ -70,7 +74,7 @@ body {
 }
 
 ::selection {
-  background: rgba(155, 196, 177, 0.28);
+  background: rgba(48, 84, 68, 0.16);
 }
 
 /* In the base layer so component classes (outline-none on the composer, which draws its own focus ring) win. */
@@ -81,7 +85,7 @@ body {
   }
 }
 
-/* Dark, thin scrollbars for wide tables and long pages. */
+/* Thin, neutral scrollbars for wide tables and long pages. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;

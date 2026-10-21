@@ -201,7 +201,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   if (liveTurns.length === 0 && !initialThread) {
     return (
       <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col justify-center px-4 pb-24 pt-12 sm:px-6">
-        <h1 className="text-balance text-center text-2xl font-medium text-ink sm:text-[28px]">
+        <h1 className="text-balance text-center text-2xl font-semibold text-ink sm:text-[28px]">
           Research companies with cited financials
         </h1>
         <p className="mt-2 text-center text-[15px] text-ink-3">
@@ -243,7 +243,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
             </Link>
             <header className="mt-5">
               <p className="text-xs font-medium uppercase tracking-wider text-ink-3">Research thread</p>
-              <h1 className="mt-2 text-balance text-2xl font-medium leading-snug text-ink [overflow-wrap:anywhere] sm:text-[28px]">
+              <h1 className="mt-2 text-balance text-2xl font-semibold leading-snug text-ink [overflow-wrap:anywhere] sm:text-[28px]">
                 {initialThread.title}
               </h1>
             </header>
@@ -382,7 +382,7 @@ function LimitPanel({ denial }: { denial: UsageDenial }) {
 function TurnHeader({ question, createdAt }: { question: string; createdAt?: string }) {
   return (
     <header>
-      <h2 className="text-balance text-lg font-medium leading-snug text-ink [overflow-wrap:anywhere] sm:text-xl">{question}</h2>
+      <h2 className="text-balance text-lg font-semibold leading-snug text-ink [overflow-wrap:anywhere] sm:text-xl">{question}</h2>
       {createdAt ? (
         <SavedTime iso={createdAt} className="mt-1.5 block text-xs text-ink-4" />
       ) : (

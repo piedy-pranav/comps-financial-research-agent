@@ -33,7 +33,7 @@ export default async function PricingPage({ searchParams }: { searchParams: Prom
     <AppShell section="Pricing">
       <div className="mx-auto w-full max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <header className="max-w-xl">
-          <h1 className="text-2xl font-medium text-ink sm:text-[28px]">Simple research access</h1>
+          <h1 className="text-2xl font-semibold text-ink sm:text-[28px]">Simple research access</h1>
           <p className="mt-2 text-[15px] leading-6 text-ink-3">
             Cited peer benchmarks from SEC filings, without the enterprise price tag.
           </p>

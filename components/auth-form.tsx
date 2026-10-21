@@ -69,7 +69,7 @@ export function AuthForm({ mode, initialError }: { mode: Mode; initialError?: st
           C
         </Link>
         <div className="rounded-lg border border-line bg-raised p-6">
-          <h1 className="text-lg font-medium text-ink">{isLogin ? "Log in to Comps" : "Create your account"}</h1>
+          <h1 className="text-lg font-semibold text-ink">{isLogin ? "Log in to Comps" : "Create your account"}</h1>
           <p className="mt-1 text-[13px] text-ink-3">
             {isLogin ? "Welcome back." : "Start with 3 free questions."}
           </p>
@@ -113,7 +113,7 @@ export function AuthForm({ mode, initialError }: { mode: Mode; initialError?: st
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-ink px-4 py-2 text-sm font-medium text-canvas transition-colors duration-150 hover:bg-white disabled:opacity-50"
+              className="w-full rounded-md bg-accent px-4 py-2 text-sm font-medium text-canvas transition-colors duration-150 hover:bg-accent-hover disabled:opacity-50"
             >
               {loading ? "Please wait…" : isLogin ? "Log in" : "Sign up"}
             </button>

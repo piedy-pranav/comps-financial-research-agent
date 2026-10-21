@@ -28,13 +28,26 @@ function Prose({ markdown, known }: { markdown: string; known: Set<string> }) {
           ul: (p: MdProps<"ul">) => <ul className="mb-4 list-disc space-y-1.5 pl-5 last:mb-0">{p.children}</ul>,
           ol: (p: MdProps<"ol">) => <ol className="mb-4 list-decimal space-y-1.5 pl-5 last:mb-0">{p.children}</ol>,
           strong: (p: MdProps<"strong">) => <strong className="font-medium text-ink">{p.children}</strong>,
-          h1: (p: MdProps<"h1">) => <p className="mb-2 font-medium">{p.children}</p>,
-          h2: (p: MdProps<"h2">) => <p className="mb-2 font-medium">{p.children}</p>,
-          h3: (p: MdProps<"h3">) => <p className="mb-2 font-medium">{p.children}</p>,
+          h1: (p: MdProps<"h1">) => <p className="mb-2 font-semibold">{p.children}</p>,
+          h2: (p: MdProps<"h2">) => <p className="mb-2 font-semibold">{p.children}</p>,
+          h3: (p: MdProps<"h3">) => <p className="mb-2 font-semibold">{p.children}</p>,
           table: (p: MdProps<"table">) => (
             <div className="mb-4 overflow-x-auto">
               <table className="w-full text-[13px] tabular-nums">{p.children}</table>
             </div>
+          ),
+          th: ({ style, children }: MdProps<"th">) => (
+            <th style={style} className="border-b border-line px-3 py-2 text-left text-xs font-medium text-ink-3 first:pl-0">
+              {children}
+            </th>
+          ),
+          td: ({ style, children }: MdProps<"td">) => (
+            <td style={style} className="border-b border-line-subtle px-3 py-2 align-top first:pl-0">
+              {children}
+            </td>
+          ),
+          blockquote: (p: MdProps<"blockquote">) => (
+            <blockquote className="mb-4 border-l-2 border-line pl-4 text-ink-2 last:mb-0">{p.children}</blockquote>
           ),
           a: ({ href, children }: MdProps<"a">) =>
             href?.startsWith("#source-") ? (
@@ -188,7 +201,7 @@ export function AnswerView({
   if (onAsk && answer.kind === "clarification" && answer.clarification) {
     return (
       <section className="mt-8">
-        <h2 className="text-lg font-medium text-ink">
+        <h2 className="text-lg font-semibold text-ink">
           Which company did you mean by &ldquo;{answer.clarification.query}&rdquo;?
         </h2>
         <p className="mt-1 text-[13px] text-ink-3">More than one company that files with the SEC matches.</p>

@@ -30,7 +30,7 @@ export function ClarifyChoices({
               <button
                 type="button"
                 onClick={() => onAsk(o.question)}
-                className="group flex w-full items-center justify-between gap-4 py-3 text-left text-[14px] text-ink transition-colors duration-150 hover:text-white"
+                className="group flex w-full items-center justify-between gap-4 py-3 text-left text-[14px] text-ink transition-colors duration-150 hover:text-accent"
               >
                 <span>
                   {o.name} <span className="text-ink-3">({o.ticker})</span>
@@ -57,7 +57,7 @@ export function ClarifyChoices({
         <button
           type="submit"
           disabled={!typed.trim()}
-          className="rounded-md bg-ink px-3.5 py-2 text-[13px] font-medium text-canvas transition-colors duration-150 hover:bg-white disabled:bg-subtle disabled:text-ink-4"
+          className="rounded-md bg-accent px-3.5 py-2 text-[13px] font-medium text-canvas transition-colors duration-150 hover:bg-accent-hover disabled:bg-subtle disabled:text-ink-4"
         >
           Ask
         </button>

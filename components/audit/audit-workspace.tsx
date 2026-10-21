@@ -179,7 +179,7 @@ export function AuditResult({ audit }: { audit: ComparabilityAudit }) {
       <section className="rounded-lg border border-line bg-raised px-4 py-5 sm:px-6" aria-live="polite">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-[20px] font-medium text-ink">
+            <h2 className="text-[20px] font-semibold text-ink">
               {ca.ticker} vs {cb.ticker}
             </h2>
             <p className="mt-0.5 text-[13px] text-ink-3">
@@ -324,7 +324,7 @@ export function AuditWorkspace({ initial }: { initial?: { tickerA: string; ticke
   return (
     <div className="mx-auto w-full max-w-(--answer-max) flex-1 px-4 pb-16 pt-8 sm:px-6 sm:pt-10">
       <header>
-        <h1 className="text-2xl font-medium text-ink sm:text-[28px]">Comparability Audit</h1>
+        <h1 className="text-2xl font-semibold text-ink sm:text-[28px]">Comparability Audit</h1>
         <p className="mt-2 max-w-xl text-[15px] leading-6 text-ink-3">
           Are two companies&rsquo; reported figures genuinely comparable? Checks periods, currency, definitions and evidence for
           each metric, from SEC 10-K filings. A comparability review, not a statutory audit.
@@ -355,7 +355,7 @@ export function AuditWorkspace({ initial }: { initial?: { tickerA: string; ticke
           <button
             type="submit"
             disabled={busy}
-            className="flex h-10 items-center justify-center gap-2 rounded-md bg-ink px-4 text-[14px] font-medium text-canvas transition-colors duration-150 hover:bg-white disabled:bg-subtle disabled:text-ink-4"
+            className="flex h-10 items-center justify-center gap-2 rounded-md bg-accent px-4 text-[14px] font-medium text-canvas transition-colors duration-150 hover:bg-accent-hover disabled:bg-subtle disabled:text-ink-4"
           >
             {busy && <SpinnerIcon size={14} />}
             Run Audit

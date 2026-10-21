@@ -742,3 +742,22 @@ Scope: components 2 and 3 of the conversation-UX pass. Component 1 (progressive 
 **A20 follow-up fix**: when the newest year a research answer shows exists for only some companies (e.g. Microsoft has filed FY2026, Apple not yet), the review would have marked every metric insufficient. `runResearchAudit` now audits the newest year in the research that every company reports, labels that year, and lists the others as not audited. Test R04b added (research-audit 33/33).
 
 **A20 example question**: `components/ask-form.tsx` example "Compare Nike and Under Armour's inventory and operating cash flow trends" (uses only unaudited metrics, so no review) replaced with "Compare Nike and Under Armour's revenue, operating income and net income". Live run (real agent and SEC, no DB): `answer` in 28.8 s, 3 tables FY2021 to FY2026, 6 sources, 3 follow-ups; review `partial` for FY2026 (NKE ended 2026-05-31 vs UAA ended 2026-03-31): revenue and net income partially comparable (61 days), operating income and margin insufficient (Nike), FY2021 to FY2025 stated as not audited. Lint and `tsc` pass.
+
+### A21. Warm Neutral light theme (2026-10-21, branch `pranav-dev`, not merged)
+
+**What**: frontend-only visual refresh from the dark theme to a Warm Neutral light theme (cream, off-white, forest green, olive-gray). Layout, information architecture, components, streaming, audit, persistence, auth, billing and the agent are unchanged. No new dependencies, env vars or migrations.
+
+**Changes**
+- `app/globals.css`: every token re-valued; `color-scheme: light`. The app has no dark-mode media query, theme provider or stored preference, so it stays light when the OS prefers dark. New `--bg-sidebar` token (`bg-sidebar` utility). Selection and scrollbar comment updated.
+- Tokens: canvas `#f7f5ef`, sidebar `#efeee6`, cards `#ffffff`, subtle `#f2f1ea`, hover `#e8e7dd`; borders `#daddd3` / `#e4e5dc` / `#c6cbbf`; text `#26372e`, `#4e5b52`, `#5d6b61`, `#64705e`; accent `#305444` (hover `#264437`); semantic: comparable `#2f6b47`, caution `#8a5b0e`, not comparable `#a23b3b`; insufficient evidence stays neutral gray (`ink-3`).
+- Deviation from the requested palette: secondary text `#627066` and olive `#71816d` were darkened (to the `#4e5b52` / `#5d6b61` / `#64705e` tiers) because `#627066` is 4.48:1 on the sidebar and olive is 3.8:1 on the canvas. Measured with a WCAG contrast script: primary, secondary and muted text, the accent and the three status colors are at least 4.5:1 on every surface; faint labels are about 4.5:1 on the sidebar and above it elsewhere.
+- Primary buttons (composer send, auth submit, clarify "Ask", audit submit): `bg-ink … hover:bg-white` -> `bg-accent … hover:bg-accent-hover`. Clarify option hover `text-white` -> `text-accent`.
+- Sidebar: hard-coded `bg-[#111110]` -> `bg-sidebar`; nav rows weight 500; active item `text-accent` on `bg-hover`; hover `bg-hover/60`.
+- Typography: Geist Sans / Geist Mono were already loaded via `next/font/google` (unchanged). Page titles and section headings (incl. markdown h1 to h3 in answers) `font-medium` -> `font-semibold`.
+- `components/answer-view.tsx` (Prose): markdown `th`/`td` get header/row borders (GFM column alignment `style` is passed through) and `blockquote` gets a left rule. Parsing and rendering logic unchanged.
+- `app/layout.tsx`: `themeColor` `#f7f5ef`. `next.config.ts`: `devIndicators: false` (per the Next 16.4.2 bundled docs; no CSS hiding).
+- The comparability review panel needed no edits: it uses the semantic tokens, so cautions, clean and unavailable states recolor automatically.
+
+**Tests**: `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeds and the production CSS contains none of the old dark colors. Dev-server smoke: `/login` and `/pricing` return 200 and serve the light tokens. No frontend test suite exists; no eval cases apply (no agent change).
+
+**Not verified**: no browser visual pass yet (answer tables, the three review states, `/audit`, history, pricing, login, mobile, keyboard focus, OS dark mode). The dev indicator change needs a dev-server restart. `docs/COMPS_UI_REBUILD_PERPLEXITY_FINANCE.md` section 5 still lists the old dark tokens and is superseded by `app/globals.css`.

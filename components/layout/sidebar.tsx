@@ -9,7 +9,7 @@ import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "
 
 const itemClass = (active: boolean) =>
   `flex h-10 w-10 items-center justify-center rounded-md transition-colors duration-150 ${
-    active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"
+    active ? "bg-hover text-accent" : "text-ink-3 hover:bg-subtle hover:text-ink"
   }`;
 
 function useNav() {
@@ -72,9 +72,9 @@ function useCollapsed(userId?: string | null) {
 }
 
 const rowClass = (active: boolean, collapsed: boolean) =>
-  `flex h-10 items-center rounded-md text-[14px] transition-colors duration-150 ${
+  `flex h-10 items-center rounded-md text-[14px] font-medium transition-colors duration-150 ${
     collapsed ? "w-10 justify-center" : "w-full gap-3 px-3"
-  } ${active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"}`;
+  } ${active ? "bg-hover text-accent" : "text-ink-3 hover:bg-hover/60 hover:text-ink"}`;
 
 export type RecentThreads = { ok: true; rows: ThreadRow[] } | { ok: false } | null;
 
@@ -118,7 +118,7 @@ function RecentList({ recent, pathname }: { recent: RecentThreads; pathname: str
                     title={t.title}
                     aria-current={active ? "page" : undefined}
                     className={`block truncate rounded-md px-3 py-1.5 text-[13px] leading-5 transition-colors duration-150 ${
-                      active ? "bg-hover text-ink" : "text-ink-3 hover:bg-subtle hover:text-ink"
+                      active ? "bg-hover text-ink" : "text-ink-3 hover:bg-hover/60 hover:text-ink"
                     }`}
                   >
                     {t.title}
@@ -150,7 +150,7 @@ export function Sidebar({ userId, recent = null }: { userId?: string | null; rec
   ];
   return (
     <aside
-      className={`sticky top-0 hidden h-dvh shrink-0 flex-col gap-1 border-r border-line-subtle bg-[#111110] py-3 md:flex ${
+      className={`sticky top-0 hidden h-dvh shrink-0 flex-col gap-1 border-r border-line-subtle bg-sidebar py-3 md:flex ${
         collapsed ? "w-(--sidebar-width) items-center" : "w-(--sidebar-width-open) px-3"
       }`}
     >
@@ -162,7 +162,7 @@ export function Sidebar({ userId, recent = null }: { userId?: string | null; rec
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-subtle hover:text-ink"
+          className="flex h-9 w-9 items-center justify-center rounded-md text-ink-3 transition-colors duration-150 hover:bg-hover/60 hover:text-ink"
         >
           <SidebarIcon size={18} />
         </button>
