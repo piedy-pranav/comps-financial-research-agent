@@ -784,3 +784,13 @@ Scope: components 2 and 3 of the conversation-UX pass. Component 1 (progressive 
 **Requires confirmation from Yash**: the live domain and that Railway deploys from `main`; whether production shares the dev Supabase project; whether 002 is applied; whether "Confirm email" is on; whether app sleeping is off with 1 replica; the production `LLM_MODEL` (Sonnet is mostly unverified); and ownership of production keys and dashboards.
 
 **Remaining risks**: local Node here is v26 while Railway uses 22.x, so validate on 22 before merging. None of the production checks in the guide have been run yet.
+
+### A23. Solid comparability status badges on `/audit` (2026-10-21, branch `pranav-dev`, not merged)
+
+**What**: frontend-only. In `components/audit/audit-workspace.tsx`, the `STATUS_STYLE` badges for the five comparability statuses change from outlined (tinted border plus colored text) to solid fills with white text, so each metric's outcome reads at a glance. Statuses, labels, audit logic, the API, persistence and the research-answer comparability panel are unchanged. No new tokens, dependencies or env vars.
+
+**Mapping**: `COMPARABLE` -> `bg-pos`, `ADJUSTED` -> `bg-accent`, `PARTIALLY_COMPARABLE` -> `bg-warn`, `NOT_COMPARABLE` -> `bg-neg`, `INSUFFICIENT_EVIDENCE` -> `bg-ink-3` (neutral gray, as in A21), each with a matching border and `text-white`.
+
+**Tests**: WCAG contrast of white text on each fill, computed from the `app/globals.css` tokens: positive `#2f6b47` 6.33:1, negative `#a23b3b` 6.51:1, warning `#8a5b0e` 5.86:1, accent `#305444` 8.48:1, muted `#5d6b61` 5.61:1. All pass AA (4.5:1), and the code comment's "at least 5.6:1" holds. `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeds. No frontend test suite exists, and no eval cases apply (no agent change).
+
+**Not verified**: no browser visual pass of `/audit` with real results (badge sizing, legibility next to the caveat text, mobile width).

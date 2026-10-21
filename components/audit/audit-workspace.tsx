@@ -6,12 +6,13 @@ import { AlertIcon, ArrowUpRightIcon, CheckIcon, ChevronRightIcon, SpinnerIcon, 
 import { auditToMarkdown, STATUS_LABEL } from "@/lib/audit/report";
 import type { ComparabilityAudit, ComparabilityStatus, MetricAudit } from "@/lib/audit/types";
 
+// Solid fills so the outcome reads at a glance; white text is at least 5.6:1 on each fill.
 const STATUS_STYLE: Record<ComparabilityStatus, string> = {
-  COMPARABLE: "border-pos/40 text-pos",
-  ADJUSTED: "border-accent/40 text-accent",
-  PARTIALLY_COMPARABLE: "border-warn/40 text-warn",
-  NOT_COMPARABLE: "border-neg/40 text-neg",
-  INSUFFICIENT_EVIDENCE: "border-line-strong text-ink-3",
+  COMPARABLE: "border-pos bg-pos text-white",
+  ADJUSTED: "border-accent bg-accent text-white",
+  PARTIALLY_COMPARABLE: "border-warn bg-warn text-white",
+  NOT_COMPARABLE: "border-neg bg-neg text-white",
+  INSUFFICIENT_EVIDENCE: "border-ink-3 bg-ink-3 text-white",
 };
 
 const EXAMPLES: [string, string, string][] = [
