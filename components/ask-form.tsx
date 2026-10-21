@@ -23,7 +23,7 @@ import { useFollowScroll } from "./research/use-follow-scroll";
 const EXAMPLES = [
   "Compare Nike, Lululemon, and Under Armour's gross margin over the last 5 years",
   "How has Deckers' revenue and operating income grown since 2020?",
-  "Compare Nike and Under Armour's inventory and operating cash flow trends",
+  "Compare Nike and Under Armour's revenue, operating income and net income",
   "How have VF Corp's margins changed over the last 5 years?",
 ];
 
