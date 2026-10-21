@@ -285,10 +285,10 @@ type State =
   | { kind: "error"; message: string }
   | { kind: "done"; audit: ComparabilityAudit };
 
-export function AuditWorkspace() {
-  const [tickerA, setTickerA] = useState("");
-  const [tickerB, setTickerB] = useState("");
-  const [period, setPeriod] = useState("latest");
+export function AuditWorkspace({ initial }: { initial?: { tickerA: string; tickerB: string; period: string } }) {
+  const [tickerA, setTickerA] = useState(initial?.tickerA ?? "");
+  const [tickerB, setTickerB] = useState(initial?.tickerB ?? "");
+  const [period, setPeriod] = useState(initial?.period && YEARS.includes(initial.period) ? initial.period : "latest");
   const [state, setState] = useState<State>({ kind: "idle" });
 
   async function run(a: string, b: string, p: string) {

@@ -1,5 +1,6 @@
 // NDJSON stream for /api/agent, with run persistence. Kept free of Next/Supabase imports (they come in
 // through `deps`) so scripts can test the failure paths without a browser session.
+import type { ResearchAuditSummary } from "../audit/types";
 import type { AgentEvent, AgentResult, AnswerExtras, TraceStep } from "./types";
 
 export type RunRecord = {
@@ -18,6 +19,9 @@ export type StreamDeps = {
     onAnswerExtras: (extras: AnswerExtras) => void,
   ): Promise<AgentResult>;
   save(record: RunRecord): Promise<void>; // should throw on failure
+  // Optional comparability enrichment (lib/audit/research.ts). Bounded and expected never to throw; a throw is
+  // treated as "no audit". It never changes the result, its status or usage.
+  audit?(result: AgentResult, signal: AbortSignal): Promise<ResearchAuditSummary | null>;
   saveTimeoutMs?: number;
 };
 
@@ -65,14 +69,23 @@ export function createAgentStream(question: string, deps: StreamDeps): ReadableS
           (text) => send({ type: "answer_delta", text }),
           (extras) => send({ type: "answer_extras", ...extras }),
         );
+        let audit: ResearchAuditSummary | null = null;
+        if (deps.audit) {
+          try {
+            audit = await deps.audit(result, abort.signal);
+          } catch (err) {
+            console.error("[api/agent] audit failed:", err instanceof Error ? err.message : "unknown error");
+          }
+        }
         // Saved before `final` so the next request already sees this run when usage is counted (Step 3).
         await saveBestEffort(deps, {
           question,
           answer: result.answer.answerMarkdown,
-          trace: { steps: result.trace, answer: result.answer },
+          trace: { steps: result.trace, answer: result.answer, ...(audit ? { audit } : {}) },
           status: result.status,
         });
         send({ type: "final", result });
+        if (audit) send({ type: "audit", audit });
       } catch (err) {
         console.error("[api/agent]", err);
         await saveBestEffort(deps, {

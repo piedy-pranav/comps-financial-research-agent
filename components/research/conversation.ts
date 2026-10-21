@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentResult, AnswerExtras, TraceStep } from "@/lib/agent/types";
+import { toResearchAudit, type ResearchAuditSummary } from "@/lib/audit/types";
 import type { UsageDenial } from "@/lib/usage-types";
 
 // The turns asked in this visit to the workspace, oldest first. Each turn owns its own stream state, so a new
@@ -14,10 +15,11 @@ export type LiveTurn = {
   draftDone: boolean; // the preview has finished revealing after `final` arrived
   runError: string | null; // the request or the run failed
   limit: UsageDenial | null; // HTTP 402: out of questions (not an error)
+  audit: ResearchAuditSummary | null; // comparability review, if the server ran one for this turn
 };
 
 export function newTurn(id: string, question: string): LiveTurn {
-  return { id, question, steps: [], result: null, draftAnswer: "", draftExtras: null, draftDone: false, runError: null, limit: null };
+  return { id, question, steps: [], result: null, draftAnswer: "", draftExtras: null, draftDone: false, runError: null, limit: null, audit: null };
 }
 
 // Applies `change` to the turn with this id and leaves every other turn untouched (same objects).
@@ -36,6 +38,8 @@ export function applyEvent(turn: LiveTurn, event: AgentEvent): LiveTurn {
       return { ...turn, draftExtras: { tables: event.tables, sources: event.sources, followUps: event.followUps } };
     case "final":
       return { ...turn, result: event.result }; // the preview (if any) finishes revealing, then this takes over
+    case "audit":
+      return { ...turn, audit: toResearchAudit(event.audit) };
     case "error":
       return { ...turn, draftAnswer: "", draftExtras: null, runError: event.message };
     default:

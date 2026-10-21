@@ -352,7 +352,11 @@ The shared `AgentEvent` type is authoritative. Current semantic event sequence:
 - zero or more `step`
 - zero or more `answer_delta` while the final answer is being written (see STREAM-006)
 - then exactly one `final`
+- then optionally one `audit` (STREAM-007)
 - or an `error` if the route itself cannot complete
+
+### STREAM-007 — Comparability enrichment
+For a validated `answer` whose trace shows successful `get_financials` calls for two or more companies with at least one audit-supported metric (revenue, operating income, net income; operating margin when revenue and operating income are fetched), the server runs the deterministic comparability audit (`lib/audit/research.ts`, no model call, bounded at 6 s) after the agent finishes and before the run is saved. The first company is the anchor; up to two pairs are audited. The audited fiscal year is the most recent FY the answer's tables or prose show (`latest` only when none is shown), and multi-year research states that other years were not audited. The summary (`ResearchAuditSummary`) is saved as `runs.trace.audit` and sent as `audit {audit}` after `final`. It never changes `final`, the run's status or usage; an audit failure yields an `unavailable` summary or no event, never a failed run. Saved runs without `trace.audit` show no review.
 
 ### STREAM-006 — Provisional answer preview
 `answer_delta {text}` carries the cumulative, UNVERIFIED prose of `final_answer.answer_markdown` as the model generates it (at most ~10 per second, extracted by `lib/agent/partialJson.ts` from the streamed tool input). It is display-only: never persisted, never counted, never trusted; citation markers are hidden in the client preview. The `final` event (server-resolved, citation-verified) is the single source of truth and replaces the preview; a run that ends in `error` discards it and saves a failed run. Clients that ignore `answer_delta` still work. If the streaming model call fails for any reason other than a user cancel, the loop retries once without streaming within the remaining time budget, so streaming can never break a request. `AGENT_STREAMING=off` disables it. Saved runs are never replayed as streams.

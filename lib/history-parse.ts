@@ -1,11 +1,13 @@
 // Pure helpers for Research History (docs/RESEARCH_HISTORY_PLAN.md). No server imports: used by server pages,
 // client components and offline tests. Everything here tolerates old or malformed `runs.trace` rows.
 import type { AnswerKind, AnswerTable, FinalAnswer, Source, ToolName, TraceStep } from "./agent/types";
+import { toResearchAudit, type ResearchAuditSummary } from "./audit/types";
 
 export type PersistedRun = {
   steps: TraceStep[];
   answer: FinalAnswer;
   structured: boolean; // false when the answer was rebuilt from the stored text (legacy/malformed trace)
+  audit: ResearchAuditSummary | null; // only when one was actually saved with the run; never reconstructed
 };
 
 const KINDS: readonly AnswerKind[] = [
@@ -106,13 +108,14 @@ export function parsePersistedRun(trace: unknown, answerText: string | null, sta
   const t = isObj(trace) ? trace : null;
   const steps = t && Array.isArray(t.steps) ? t.steps.map(toStep).filter((s): s is TraceStep => s !== null) : [];
   const structured = t ? toAnswer(t.answer) : null;
-  if (structured) return { steps, answer: structured, structured: true };
+  if (structured) return { steps, answer: structured, structured: true, audit: toResearchAudit(t?.audit) };
 
   const text = answerText?.trim();
   const ok = status === "success" && !!text;
   return {
     steps,
     structured: false,
+    audit: null,
     answer: {
       kind: ok ? "answer" : "error",
       answerMarkdown: text || "This run didn't save a result.",

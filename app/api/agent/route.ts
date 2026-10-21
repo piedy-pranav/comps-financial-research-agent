@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAgent } from "@/lib/agent/loop";
+import { runResearchAudit } from "@/lib/audit/research";
+import { fetchCompanyData } from "@/lib/audit/retrieve";
 import { createAgentStream } from "@/lib/agent/runStream";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentUser } from "@/lib/supabase/server";
@@ -65,6 +67,8 @@ export async function POST(request: Request) {
     const stream = createAgentStream(question, {
       run: (q, onStep, signal, onAnswerDelta, onAnswerExtras) =>
         runAgent(q, onStep, signal, priorContext, onAnswerDelta, onAnswerExtras),
+      // Deterministic, bounded (6s), no model call; only for validated answers comparing 2+ companies.
+      audit: (result, signal) => runResearchAudit(result, fetchCompanyData, { signal }),
       save: async (record) => {
         // createAdminClient throws if env vars are missing; createAgentStream treats that as a failed save.
         const { error } = await createAdminClient()

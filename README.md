@@ -58,7 +58,9 @@ Requires Node 22.
 
 Limitations: an evidence-backed comparability review, not a statutory audit. Annual 10-K US GAAP facts in USD only (no FX conversion, non-GAAP, segments or IFRS filers); periods are matched to the nearest fiscal year-end, not recalendarized; companies that do not report an operating income line (Nike) get `INSUFFICIENT_EVIDENCE` rather than an estimate. Audits do not count against research questions; they are limited to 10 per user per hour (in memory, per server process).
 
-Tests: `NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-audit.ts` (offline) and `NODE_OPTIONS=--conditions=react-server npx tsx --env-file=.env.local scripts/try-audit-live.ts NKE LULU 2024` (real SEC data and model).
+Research answers that compare two or more companies also show a **Comparability review** above the answer: the same deterministic audit (no model call) for the most recent fiscal year the answer shows, with cautions, SEC links, the metrics not audited, and a link to the full audit. It is saved with the run and reappears when the thread is reopened; older runs show no review.
+
+Tests: `NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-audit.ts`, `npx tsx scripts/try-research-audit.ts` (offline) and `NODE_OPTIONS=--conditions=react-server npx tsx --env-file=.env.local scripts/try-audit-live.ts NKE LULU 2024` (real SEC data and model).
 
 ## Team
 

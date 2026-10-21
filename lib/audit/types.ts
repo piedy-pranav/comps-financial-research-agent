@@ -169,3 +169,64 @@ export function parseAuditRequest(body: unknown): { ok: true; value: AuditReques
   }
   return { ok: true, value: { tickerA, tickerB, period } };
 }
+
+// ---- Research enrichment ------------------------------------------------------------------------------------------
+// A compact, deterministic summary of the audit attached to a research answer (never part of final_answer). Built
+// from ComparabilityAudit results; saved in runs.trace.audit and sent as the optional `audit` stream event.
+
+export type ResearchAuditFinding = {
+  pair: string; // "NKE vs UAA"
+  metricId: AuditMetricId;
+  metric: string;
+  status: ComparabilityStatus;
+  explanation: string;
+  evidenceUrls: string[];
+  requiresHumanReview: boolean;
+};
+
+export type ResearchAuditSummary = {
+  status: "completed" | "partial" | "unavailable";
+  companies: string[];
+  auditedPeriod: string; // "FY2024" or "Latest fiscal year"
+  periodDetails: string[]; // per pair, the exact period ends compared
+  multiYear: boolean; // the research spans more years than the one audited
+  checkedMetrics: string[];
+  uncheckedMetrics: string[];
+  findings: ResearchAuditFinding[];
+  limitations: string[];
+};
+
+const RA_STATUSES = ["completed", "partial", "unavailable"] as const;
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter(isStr) : []);
+
+// Tolerant reader for persisted or streamed summaries: anything malformed is dropped rather than shown.
+export function toResearchAudit(v: unknown): ResearchAuditSummary | null {
+  const o = v as Record<string, unknown> | null;
+  if (!o || typeof o !== "object" || !isIn(RA_STATUSES, o.status) || !isStr(o.auditedPeriod)) return null;
+  const findings = (Array.isArray(o.findings) ? o.findings : []).flatMap((f): ResearchAuditFinding[] => {
+    const x = f as Record<string, unknown>;
+    if (!x || !isIn(AUDIT_METRICS, x.metricId) || !isIn(COMPARABILITY_STATUSES, x.status) || !isStr(x.metric) || !isStr(x.explanation)) return [];
+    return [
+      {
+        pair: isStr(x.pair) ? x.pair : "",
+        metricId: x.metricId,
+        metric: x.metric,
+        status: x.status,
+        explanation: x.explanation,
+        evidenceUrls: strs(x.evidenceUrls).filter((u) => /^https:\/\/www\.sec\.gov\//.test(u)),
+        requiresHumanReview: x.requiresHumanReview === true,
+      },
+    ];
+  });
+  return {
+    status: o.status,
+    companies: strs(o.companies),
+    auditedPeriod: o.auditedPeriod,
+    periodDetails: strs(o.periodDetails),
+    multiYear: o.multiYear === true,
+    checkedMetrics: strs(o.checkedMetrics),
+    uncheckedMetrics: strs(o.uncheckedMetrics),
+    findings,
+    limitations: strs(o.limitations),
+  };
+}

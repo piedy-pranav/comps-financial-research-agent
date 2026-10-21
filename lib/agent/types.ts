@@ -1,4 +1,5 @@
 // Shared agent types. No server-only imports: the browser uses these too.
+import type { ResearchAuditSummary } from "../audit/types";
 
 export type ToolName =
   | "lookup_ticker"
@@ -86,4 +87,5 @@ export type AgentEvent =
   | ({ type: "answer_extras" } & AnswerExtras) // verified rows/sources/follow-ups written so far (cumulative); preview only
   | { type: "answer_delta"; text: string } // provisional final-answer prose so far (cumulative, unverified); only `final` is authoritative
   | { type: "final"; result: AgentResult }
+  | { type: "audit"; audit: ResearchAuditSummary } // optional, after `final`: deterministic comparability check; never changes the answer
   | { type: "error"; message: string };

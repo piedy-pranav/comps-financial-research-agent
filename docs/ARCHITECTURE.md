@@ -73,7 +73,9 @@ lib/
   agent/prompt.ts            system prompt and guardrails
   agent/tools/               lookupTicker, getFinancials, calculate, searchNews, index (executor, citations)
   agent/types.ts             shared types for the trace, answer, and streamed events
-  agent/runStream.ts         NDJSON stream and best-effort run saving for /api/agent
+  agent/runStream.ts         NDJSON stream and best-effort run saving for /api/agent (plus the optional `audit` event)
+  audit/                     comparability audit: contract, deterministic engine, SEC retrieval, /api/audit handler,
+                             research enrichment (research.ts) saved as runs.trace.audit
   agent/clarify.ts           rewrites a question for an ambiguous-name choice (server and browser)
   agent/sec.ts               SEC EDGAR client with caching
   supabase/                  browser and server clients

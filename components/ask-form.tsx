@@ -11,6 +11,7 @@ import { validateQuestion } from "@/lib/validation";
 import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "./layout/events";
 import { AgentTrace } from "./agent-trace";
 import { AnswerView, DraftAnswer } from "./answer-view";
+import { ComparabilityCautions } from "./research/comparability-cautions";
 import { SavedTime } from "./history/saved-time";
 import { applyEvent, newTurn, turnView, updateTurn, type LiveTurn } from "./research/conversation";
 import { ExampleQuestions } from "./research/example-questions";
@@ -252,6 +253,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
           <section key={turn.id} aria-label={`Question ${i + 1}`} className={sectionClass(i)}>
             <TurnHeader question={turn.question} createdAt={turn.createdAt} />
             <AgentTrace steps={turn.run.steps} loading={false} />
+            {turn.run.audit && <ComparabilityCautions audit={turn.run.audit} />}
             <AnswerView result={{ status: "success", answer: turn.run.answer, trace: turn.run.steps }} onAsk={onAskFor(i)} />
           </section>
         ))}
@@ -335,6 +337,7 @@ function LiveTurnView({
 
       {previewVisible && <DraftAnswer text={turn.draftAnswer} extras={turn.draftExtras} done={turn.result !== null} onDrained={drained} />}
 
+      {resultVisible && turn.result && turn.audit && <ComparabilityCautions audit={turn.audit} />}
       {resultVisible && turn.result && <AnswerView result={turn.result} onAsk={onAsk} retryQuestion={turn.question} />}
     </>
   );
