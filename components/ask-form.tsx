@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentEvent, AgentResult, AnswerExtras, TraceStep } from "@/lib/agent/types";
+import type { AgentEvent } from "@/lib/agent/types";
 import type { ThreadDetail } from "@/lib/history";
 import type { UsageDenial } from "@/lib/usage-types";
 import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
@@ -12,6 +12,7 @@ import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "
 import { AgentTrace } from "./agent-trace";
 import { AnswerView, DraftAnswer } from "./answer-view";
 import { SavedTime } from "./history/saved-time";
+import { applyEvent, newTurn, turnView, updateTurn, type LiveTurn } from "./research/conversation";
 import { ExampleQuestions } from "./research/example-questions";
 import { QuestionComposer } from "./research/question-composer";
 import { QuestionHeader } from "./research/question-header";
@@ -25,66 +26,61 @@ const EXAMPLES = [
   "How have VF Corp's margins changed over the last 5 years?",
 ];
 
-// The research workspace: owns the question, the streamed trace and the final result. Without `initialThread` it is
-// the empty-state home page, and the first answer creates a thread that later follow-ups in this session reuse.
-// With `initialThread` (/history/[threadId]) it shows the saved turns and every question continues that thread.
+// The research workspace: owns the question and every turn asked in this visit. Without `initialThread` it is the
+// empty-state home page, and the first answer creates a thread that later follow-ups in this session continue, each
+// appended below the last. With `initialThread` (/history/[threadId]) it shows the saved turns, and every question
+// continues that thread the same way.
 export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
-  const turns = initialThread?.runs ?? [];
+  // Saved turns as loaded when the page opened. Turns asked here stay live turns until the page is loaded again, so
+  // a completed turn is never swapped for its saved copy mid-conversation (which could hide or duplicate a turn).
+  const [savedTurns] = useState(() => initialThread?.runs ?? []);
+  const [liveTurns, setLiveTurns] = useState<LiveTurn[]>([]);
   const [threadId, setThreadId] = useState<string | null>(initialThread?.id ?? null);
-  // How many saved turns existed when the live question was asked. Once the server re-renders with more, the live
-  // turn has become a saved one and is hidden (derived, so no effect or duplicate).
-  const [liveBase, setLiveBase] = useState(0);
-  const liveRef = useRef<HTMLDivElement>(null);
+  const liveRef = useRef<HTMLElement>(null); // the newest live turn
   const contentRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef(initialThread?.title ?? ""); // thread title for the sidebar (the first question of a new thread)
+  const turnSeq = useRef(0);
+  const jumpTo = useRef<string | null>(null); // a new turn below earlier ones: bring it into view once it renders
+  const refreshFor = useRef<string | null>(null); // refresh the server-rendered parts once this turn's answer shows
   const [draft, setDraft] = useState(""); // what is typed in the composer
-  const [asked, setAsked] = useState<string | null>(null); // the question being researched
   const [loading, setLoading] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null); // the question was rejected before any request
-  const [runError, setRunError] = useState<string | null>(null); // the request or the run failed
-  const [limit, setLimit] = useState<UsageDenial | null>(null); // HTTP 402: out of questions (not an error)
   const router = useRouter();
-  const [steps, setSteps] = useState<TraceStep[]>([]);
-  const [result, setResult] = useState<AgentResult | null>(null);
-  const [draftAnswer, setDraftAnswer] = useState(""); // provisional prose while the answer is written; replaced by `result`
-  const [draftExtras, setDraftExtras] = useState<AnswerExtras | null>(null); // verified preview rows/sources/follow-ups
-  const [draftDone, setDraftDone] = useState(false); // the preview has finished revealing after `final` arrived
-  const refreshPending = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  const follow = useFollowScroll(contentRef, loading || result !== null);
+  const last = liveTurns.at(-1);
+  const follow = useFollowScroll(contentRef, loading || (last?.result ?? null) !== null);
 
   async function ask(raw: string) {
+    if (abortRef.current) return; // one run at a time
     const validation = validateQuestion(raw);
     if (!validation.ok) {
       setInputError(validation.error);
       return;
     }
+    const question = validation.question;
 
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setAsked(validation.question);
-    setLiveBase(turns.length);
+    // Everything below changes only this turn; earlier turns are never touched.
+    const id = `turn-${++turnSeq.current}`;
+    const update = (change: (turn: LiveTurn) => LiveTurn) => setLiveTurns((turns) => updateTurn(turns, id, change));
+    const hasEarlier = savedTurns.length > 0 || liveTurns.length > 0;
+
+    setLiveTurns((turns) => [...turns, newTurn(id, question)]);
     setDraft("");
     setLoading(true);
     setInputError(null);
-    setRunError(null);
-    setLimit(null);
-    setSteps([]);
-    setResult(null);
-    setDraftAnswer("");
-    setDraftExtras(null);
-    setDraftDone(false);
-    refreshPending.current = false;
-    if (!initialThread) window.scrollTo({ top: 0 });
+    if (hasEarlier) jumpTo.current = id;
+    else window.scrollTo({ top: 0 });
     follow(); // follow the new research as it grows, until the reader scrolls up
 
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: validation.question, ...(threadId ? { threadId } : {}) }),
+        body: JSON.stringify({ question, ...(threadId ? { threadId } : {}) }),
         signal: controller.signal,
       });
 
@@ -92,11 +88,11 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
         if (res.status === 402 && (data?.code === "FREE_LIMIT_REACHED" || data?.code === "DAILY_LIMIT_REACHED")) {
-          setLimit(data as UsageDenial);
+          update((t) => ({ ...t, limit: data as UsageDenial }));
           router.refresh(); // sync the plan badge with the server's count
           return;
         }
-        setRunError(data?.error ?? "Something went wrong. Please try again.");
+        update((t) => ({ ...t, runError: data?.error ?? "Something went wrong. Please try again." }));
         return;
       }
 
@@ -105,7 +101,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       if (returnedThread) {
         setThreadId(returnedThread);
         // Sidebar: show a new thread (or move a continued one to the top) now that the server has accepted the question.
-        if (!threadId) titleRef.current = validation.question.slice(0, 120);
+        if (!threadId) titleRef.current = question.slice(0, 120);
         window.dispatchEvent(
           new CustomEvent<ThreadActivity>(THREAD_ACTIVITY_EVENT, { detail: { id: returnedThread, title: titleRef.current } }),
         );
@@ -125,19 +121,9 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
         } catch {
           return;
         }
-        if (event.type === "step") setSteps((prev) => [...prev, event.step]);
-        else if (event.type === "answer_delta") setDraftAnswer(event.text);
-        else if (event.type === "answer_extras") setDraftExtras({ tables: event.tables, sources: event.sources, followUps: event.followUps });
-        else if (event.type === "final") {
-          gotFinal = true;
-          gotResult = true;
-          setResult(event.result); // the preview (if any) finishes revealing, then this takes over
-        } else if (event.type === "error") {
-          gotFinal = true;
-          setDraftAnswer("");
-          setDraftExtras(null);
-          setRunError(event.message);
-        }
+        if (event.type === "final") gotFinal = gotResult = true;
+        else if (event.type === "error") gotFinal = true;
+        update((t) => applyEvent(t, event));
       };
 
       while (true) {
@@ -150,15 +136,15 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       }
       handleLine(buffer);
 
-      // The run is persisted by now, so re-render the server-side plan badge with the new remaining count.
-      // With a result, refresh once it is actually on screen (see the effect below), so the saved turn does not
-      // replace a preview that is still finishing. Errors have nothing to wait for.
+      // The run is persisted by now, so re-render the server-side plan badge and sidebar with the new counts.
+      // With a result, refresh once it is actually on screen (see the effect below), so the re-render does not land
+      // while a preview is still finishing. Errors have nothing to wait for.
       if (gotFinal && !gotResult) router.refresh();
-      else if (gotResult) refreshPending.current = true;
-      if (!gotFinal) setRunError("The connection ended before an answer arrived. Please try again.");
+      else if (gotResult) refreshFor.current = id;
+      if (!gotFinal) update((t) => ({ ...t, runError: "The connection ended before an answer arrived. Please try again." }));
     } catch {
       // A reset or unmount aborts the request on purpose; that is not an error to show.
-      if (!controller.signal.aborted) setRunError("Couldn't reach the server. Check your connection and try again.");
+      if (!controller.signal.aborted) update((t) => ({ ...t, runError: "Couldn't reach the server. Check your connection and try again." }));
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
@@ -173,18 +159,12 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     abortRef.current = null;
     setThreadId(null); // "New question" always starts a new thread
     titleRef.current = "";
+    jumpTo.current = null;
+    refreshFor.current = null;
+    setLiveTurns([]);
     setDraft("");
-    setAsked(null);
     setLoading(false);
     setInputError(null);
-    setRunError(null);
-    setLimit(null);
-    setSteps([]);
-    setResult(null);
-    setDraftAnswer("");
-    setDraftExtras(null);
-    setDraftDone(false);
-    refreshPending.current = false;
   }, []);
 
   useEffect(() => {
@@ -195,27 +175,29 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     };
   }, [reset]);
 
-  // The validated answer is shown once any preview has finished revealing (or immediately if there was none).
-  const resultVisible = result !== null && (!draftAnswer || draftDone);
-  const previewVisible = !!draftAnswer && !runError && !(result !== null && draftDone);
-  const handleDrained = useCallback(() => setDraftDone(true), []);
+  const handleDrained = useCallback(
+    (id: string) => setLiveTurns((turns) => updateTurn(turns, id, (t) => ({ ...t, draftDone: true }))),
+    [],
+  );
 
   useEffect(() => {
-    if (resultVisible && refreshPending.current) {
-      refreshPending.current = false;
+    const pending = liveTurns.find((t) => t.id === refreshFor.current);
+    if (pending && turnView(pending).resultVisible) {
+      refreshFor.current = null;
       router.refresh();
     }
-  }, [resultVisible, router]);
+  }, [liveTurns, router]);
 
-  const started = asked !== null;
-  const liveVisible = started && (!initialThread || turns.length === liveBase);
-
+  const lastId = last?.id;
   useEffect(() => {
     // Jump (not animate) so the follow-scroll sees a settled position; the hook then tracks growth.
-    if (initialThread && asked) liveRef.current?.scrollIntoView({ block: "start" });
-  }, [initialThread, asked]);
+    if (lastId && jumpTo.current === lastId) {
+      jumpTo.current = null;
+      liveRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [lastId]);
 
-  if (!started && !initialThread) {
+  if (liveTurns.length === 0 && !initialThread) {
     return (
       <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col justify-center px-4 pb-24 pt-12 sm:px-6">
         <h1 className="text-balance text-center text-2xl font-medium text-ink sm:text-[28px]">
@@ -243,33 +225,12 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     );
   }
 
-  const live = (
-    <div ref={liveRef} className="scroll-mt-6">
-      {initialThread ? <TurnHeader question={asked ?? ""} /> : <QuestionHeader question={asked ?? ""} />}
-      <AgentTrace steps={steps} loading={loading} />
-
-      {limit && <LimitPanel denial={limit} />}
-
-      {runError && (
-        <div className="mt-8">
-          <StatePanel tone="error" title="We couldn't complete this research">
-            <p>{runError}</p>
-            <button
-              type="button"
-              onClick={() => void ask(asked ?? "")}
-              className="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:bg-subtle hover:text-ink"
-            >
-              Try again
-            </button>
-          </StatePanel>
-        </div>
-      )}
-
-      {previewVisible && <DraftAnswer text={draftAnswer} extras={draftExtras} done={result !== null} onDrained={handleDrained} />}
-
-      {resultVisible && result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked ?? undefined} />}
-    </div>
-  );
+  // Saved turns first, then this visit's turns, all in order. Only the newest turn offers follow-ups, choices and
+  // retry, and only when nothing is running.
+  const total = savedTurns.length + liveTurns.length;
+  const onAskFor = (i: number) => (i === total - 1 && !loading ? (q: string) => void ask(q) : undefined);
+  const sectionClass = (i: number) =>
+    `scroll-mt-6 ${i === 0 ? (initialThread ? "mt-8" : "") : "mt-12 border-t border-line-subtle pt-8"}`;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -285,19 +246,30 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
                 {initialThread.title}
               </h1>
             </header>
-            {turns.map((turn, i) => (
-              <section key={turn.id} aria-label={`Question ${i + 1}`} className={i === 0 ? "mt-8" : "mt-12 border-t border-line-subtle pt-8"}>
-                <TurnHeader question={turn.question} createdAt={turn.createdAt} />
-                <AgentTrace steps={turn.run.steps} loading={false} />
-                <AnswerView
-                  result={{ status: "success", answer: turn.run.answer, trace: turn.run.steps }}
-                  onAsk={i === turns.length - 1 && !liveVisible ? (q) => void ask(q) : undefined}
-                />
-              </section>
-            ))}
           </>
         )}
-        {liveVisible && (initialThread ? <section className="mt-12 border-t border-line-subtle pt-8">{live}</section> : live)}
+        {savedTurns.map((turn, i) => (
+          <section key={turn.id} aria-label={`Question ${i + 1}`} className={sectionClass(i)}>
+            <TurnHeader question={turn.question} createdAt={turn.createdAt} />
+            <AgentTrace steps={turn.run.steps} loading={false} />
+            <AnswerView result={{ status: "success", answer: turn.run.answer, trace: turn.run.steps }} onAsk={onAskFor(i)} />
+          </section>
+        ))}
+        {liveTurns.map((turn, j) => {
+          const i = savedTurns.length + j;
+          const newest = j === liveTurns.length - 1;
+          return (
+            <section key={turn.id} ref={newest ? liveRef : undefined} aria-label={`Question ${i + 1}`} className={sectionClass(i)}>
+              <LiveTurnView
+                turn={turn}
+                heading={!initialThread && i === 0 ? "page" : "turn"}
+                running={newest && loading}
+                onAsk={onAskFor(i)}
+                onDrained={handleDrained}
+              />
+            </section>
+          );
+        })}
       </div>
 
       <div className="sticky bottom-0 z-10 bg-gradient-to-t from-canvas from-70% to-transparent pb-[max(1rem,env(safe-area-inset-bottom))] pt-6">
@@ -316,6 +288,55 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// One turn asked in this visit: its question, trace, and then the preview, the validated answer, or why it failed.
+function LiveTurnView({
+  turn,
+  heading,
+  running,
+  onAsk,
+  onDrained,
+}: {
+  turn: LiveTurn;
+  heading: "page" | "turn"; // the first question on the home page is the page heading
+  running: boolean;
+  onAsk?: (question: string) => void; // only on the newest turn when nothing is running
+  onDrained: (id: string) => void;
+}) {
+  const { resultVisible, previewVisible } = turnView(turn);
+  const { id } = turn;
+  const drained = useCallback(() => onDrained(id), [onDrained, id]);
+
+  return (
+    <>
+      {heading === "page" ? <QuestionHeader question={turn.question} /> : <TurnHeader question={turn.question} />}
+      <AgentTrace steps={turn.steps} loading={running} />
+
+      {turn.limit && <LimitPanel denial={turn.limit} />}
+
+      {turn.runError && (
+        <div className="mt-8">
+          <StatePanel tone="error" title="We couldn't complete this research">
+            <p>{turn.runError}</p>
+            {onAsk && (
+              <button
+                type="button"
+                onClick={() => onAsk(turn.question)}
+                className="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:bg-subtle hover:text-ink"
+              >
+                Try again
+              </button>
+            )}
+          </StatePanel>
+        </div>
+      )}
+
+      {previewVisible && <DraftAnswer text={turn.draftAnswer} extras={turn.draftExtras} done={turn.result !== null} onDrained={drained} />}
+
+      {resultVisible && turn.result && <AnswerView result={turn.result} onAsk={onAsk} retryQuestion={turn.question} />}
+    </>
   );
 }
 
