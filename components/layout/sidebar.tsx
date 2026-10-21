@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { HistoryIcon, PlusIcon, SidebarIcon, TagIcon } from "@/components/ui/icons";
+import { HistoryIcon, PlusIcon, ScaleIcon, SidebarIcon, TagIcon } from "@/components/ui/icons";
 import type { ThreadRow } from "@/lib/history-parse";
 import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "./events";
 
@@ -145,6 +145,7 @@ export function Sidebar({ userId, recent = null }: { userId?: string | null; rec
   const { collapsed, toggle } = useCollapsed(userId);
   const items = [
     { href: "/history", label: "History", icon: <HistoryIcon size={18} /> },
+    { href: "/audit", label: "Comparability Audit", icon: <ScaleIcon size={18} /> },
     { href: "/pricing", label: "Pricing", icon: <TagIcon size={18} /> },
   ];
   return (
@@ -220,6 +221,14 @@ export function MobileNav() {
         aria-current={pathname.startsWith("/history") ? "page" : undefined}
       >
         <HistoryIcon size={18} />
+      </Link>
+      <Link
+        href="/audit"
+        className={`${itemClass(pathname.startsWith("/audit"))} h-9 w-9`}
+        aria-label="Comparability Audit"
+        aria-current={pathname.startsWith("/audit") ? "page" : undefined}
+      >
+        <ScaleIcon size={18} />
       </Link>
       <Link
         href="/pricing"

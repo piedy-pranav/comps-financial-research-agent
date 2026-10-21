@@ -18,7 +18,7 @@ export const METRICS = [
 export type Metric = (typeof METRICS)[number];
 
 // Companies switch tags over time, so we merge across tags (in priority order), never stop at the first.
-const TAGS: Record<Metric, string[]> = {
+export const TAGS: Record<Metric, string[]> = {
   revenue: [
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "Revenues",

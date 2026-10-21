@@ -80,6 +80,11 @@ export const SidebarIcon = (p: IconProps) => (
     <path d="M9.5 4v16" />
   </Icon>
 );
+export const ScaleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4v16M8 20h8M5 7h14M5 7l-2.5 6a3 3 0 0 0 5 0L5 7ZM19 7l-2.5 6a3 3 0 0 0 5 0L19 7Z" />
+  </Icon>
+);
 export const TagIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M3 12V4h8l10 10-8 8L3 12Z" />
