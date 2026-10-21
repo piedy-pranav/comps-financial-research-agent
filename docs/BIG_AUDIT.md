@@ -615,7 +615,9 @@ Trigger: a VF vs Ralph Lauren driver answer showed "Researched in 5 steps" above
 
 **Not run**: browser flow (no browser tool in this session): New Question after a thread, History list, open thread, follow-up chips, refresh, mobile, console errors. Stale-figure test (earlier answer has a different number than tool output) is covered only by the prompt rule and the isolation checks, not an adversarial live case.
 
-**Remaining risks**: old `/history/<run id>` links no longer resolve (ids are thread ids now); the live thread page shows the streamed turn until `router.refresh()` lands, and keeps it if the best-effort save failed; threads created but never saved (client dropped mid-run) are hidden from History but remain in the table; untracked `supabase/*-backup-oct20.csv` files contain user data and must not be committed.
+**Remaining risks**: old `/history/<run id>` links no longer resolve (ids are thread ids now); the live thread page shows the streamed turn until `router.refresh()` lands, and keeps it if the best-effort save failed; threads created but never saved (client dropped mid-run) are hidden from History but remain in the table; `supabase/*-backup-oct20.csv` contain user data and are now git-ignored (commit `c092801`).
+
+**Update (2026-10-21)**: the browser flow listed above as not run was later covered in a real headless browser (see A15 and A16): new thread and continuation, sidebar, refresh restore, scrolling, mobile width, no console errors. Still not browser-tested: the stale-figure adversarial case, and touch scrolling.
 
 ### A15. Conversation UX: auto-scroll and sidebar recent research (2026-10-20, branch `pranav-dev`, not merged)
 
@@ -644,3 +646,8 @@ Scope: components 2 and 3 of the conversation-UX pass. Component 1 (progressive 
 **Tests**: `try-partial-json.ts` 16/16 (every prefix of a document containing quotes, backslashes, newlines, unicode, `\u` escapes, split surrogate pairs and a decoy key; incomplete escapes held back, malformed ones stop safely). `try-streaming.ts` 16/16 with a mocked SSE endpoint: incremental, monotonic, throttled previews that are prefixes of the final prose; four fallback modes; throwing listener; kill switch; abort without retry; NDJSON order and that only the validated answer is saved once; crash after a preview gives `answer_delta,error` and a failed save. Regressions: history 24, stream 8, usage 18, loop 22 (run with `AGENT_STREAMING=off` since its mock is plain JSON), grounding 31, threads 22. Lint, `tsc`, build pass. Live real-API checks (`try-streaming-live.ts`): Haiku 5.5 and Sonnet 5.5 (with the `server-side-fallback-2026-07-01` beta and `fallbacks: default`) both streamed with no fallback, monotonic previews, and the last preview equal to the final prose after marker stripping. Browser (Playwright, real agent): draft text visible and growing (21, 67, 107 characters), replaced by the validated answer, no streaming UI after reload; the earlier 20+ sidebar and scroll checks were rerun and pass.
 
 **Not verified / limits**: the refusal-fallback path of Sonnet was not triggered, so streaming through an actual refusal fallback is untested; citation-marker hiding in the draft is covered offline only; previews show only prose (no tables) by design; the draft can differ from the final text where the server removes or rewrites unverified markers.
+
+### Status summary after A14 to A16 (2026-10-21)
+- Threads / Continuation, sidebar recent research, follow-scroll and progressive answer streaming are implemented and committed on `pranav-dev` (`438f900`, `8913885`, `c9a2728`). Nothing is merged to `main` or deployed.
+- Open before merge: a manual smoke test in the user's own browser; the Sonnet refusal-fallback path under streaming is untested; `scripts/try-clarify-ui.ts` does not start in this environment (pre-existing).
+- Untracked and intentionally not committed: `docs/COMPS_AUDIT_FEAT.md`.
