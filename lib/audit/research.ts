@@ -174,6 +174,12 @@ export async function runResearchAudit(
     });
     const data = await Promise.race([Promise.all(plan.tickers.map((t) => fetchCompany(t, signal))), timeout]);
     const [anchor, ...others] = data;
+    // The newest year an answer shows may exist for only some companies (one has filed its next 10-K, the other
+    // not yet). Audit the newest year in the research that every company reports, so the panel does not say
+    // "insufficient evidence" for figures the research does have. The year actually audited is what is labeled.
+    const has = (d: CompanyData, y: number) => d.metrics.revenue.some((r) => r.fiscalYear === y) || d.metrics.net_income.some((r) => r.fiscalYear === y);
+    const common = plan.yearsInResearch.find((y) => data.every((d) => has(d, y)));
+    if (typeof plan.period === "number" && common !== undefined && common !== plan.period) plan.period = common;
     const audits = others.map((o, i) => buildAudit(anchor, o, plan.period, { auditId: `research-${i}`, now: opts.now ?? new Date() }));
     for (const a of audits) {
       const errors = validateAudit(a);

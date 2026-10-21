@@ -124,6 +124,11 @@ async function main() {
   const three = await runResearchAudit(result([...fin("KO", ["revenue"]), ...fin("PEP", ["revenue"]), ...fin("NKE", ["revenue"])], [table(["FY2025"])]), fetchFake);
   check("R01 three companies -> two pairs against the anchor", [...new Set(three?.findings.map((f) => f.pair))].join() === "KO vs PEP,KO vs NKE", three?.findings.map((f) => f.pair));
 
+  // 4b: newest year shown exists for only one company -> newest common year is audited and labeled
+  const onlyB = await runResearchAudit(result([...fin("UAA", ["revenue", "net_income"]), ...fin("NKE", ["revenue", "net_income"])], [table(["FY2025", "FY2024", "FY2023"])]), async (t) =>
+    t === "UAA" ? co("UAA", [{ fy: 2025, end: "2025-03-31", rev: 5e9, ni: 1e8 }, { fy: 2024, end: "2024-03-31", rev: 5.7e9, ni: 2.3e8 }]) : DATA[t]);
+  check("R04b newest common year audited when the newest shown is missing for one company", onlyB?.auditedPeriod === "FY2024" && onlyB.findings.find((f) => f.metricId === "revenue")?.status !== "INSUFFICIENT_EVIDENCE" && onlyB.limitations.some((l) => l.includes("FY2025")), onlyB);
+
   // 7: failure modes
   const failed = await runResearchAudit(r, async () => { throw new Error("SEC down"); });
   check("R07 retrieval failure -> 'unavailable' summary, no findings", failed?.status === "unavailable" && failed.findings.length === 0, failed);

@@ -738,3 +738,5 @@ Scope: components 2 and 3 of the conversation-UX pass. Component 1 (progressive 
 - NOT done: browser check of the logged-in research page, thread reload with a real DB row, and live follow-up turns (no browser automation or test login in this session). Covered offline by the conversation, history and research-audit tests only.
 
 **Limitations**: one fiscal year per research answer; companies beyond 3 are not audited; the anchor is the first company the agent fetched, not necessarily the first named; year detection relies on "FY2024"-style labels in the answer (bare years only as a row's first cell); the audit runs before the save, adding milliseconds normally and at most 6 s if the SEC cache was evicted.
+
+**A20 follow-up fix**: when the newest year a research answer shows exists for only some companies (e.g. Microsoft has filed FY2026, Apple not yet), the review would have marked every metric insufficient. `runResearchAudit` now audits the newest year in the research that every company reports, labels that year, and lists the others as not audited. Test R04b added (research-audit 33/33).
