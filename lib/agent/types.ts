@@ -80,5 +80,6 @@ export type AgentResult = {
 // NDJSON events streamed from /api/agent (one JSON object per line)
 export type AgentEvent =
   | { type: "step"; step: TraceStep }
+  | { type: "answer_delta"; text: string } // provisional final-answer prose so far (cumulative, unverified); only `final` is authoritative
   | { type: "final"; result: AgentResult }
   | { type: "error"; message: string };

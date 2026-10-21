@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { InfoIcon } from "@/components/ui/icons";
 import type { AgentResult, AnswerKind } from "@/lib/agent/types";
+import { stripMarkersForDraft } from "@/lib/agent/partialJson";
+import { SpinnerIcon } from "@/components/ui/icons";
 import { AnswerTable } from "./research/answer-table";
 import { ClarifyChoices } from "./research/clarify-choices";
 import { linkMarkers, markdownMarkerClass } from "./research/citation-marker";
@@ -55,6 +57,20 @@ function Prose({ markdown, known }: { markdown: string; known: Set<string> }) {
         {linkMarkers(markdown, known)}
       </ReactMarkdown>
     </div>
+  );
+}
+
+// Provisional answer prose while the final answer is still being written. Unverified: citation markers are hidden, and
+// tables, sources and notes only appear with the validated result that replaces this.
+export function DraftAnswer({ text }: { text: string }) {
+  return (
+    <section aria-label="Answer (writing)" aria-busy="true" className="mt-8">
+      <p className="mb-3 flex items-center gap-2 text-xs text-ink-3">
+        <SpinnerIcon size={12} />
+        Writing the answer
+      </p>
+      <Prose markdown={stripMarkersForDraft(text)} known={new Set()} />
+    </section>
   );
 }
 

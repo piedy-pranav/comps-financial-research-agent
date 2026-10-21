@@ -1,6 +1,7 @@
 // Offline checks for the loop (I3, I4) with a mocked Anthropic endpoint: no API key, no cost.
 process.env.ANTHROPIC_API_KEY = "test-key";
 process.env.LLM_MODEL = "claude-haiku-5-5";
+process.env.AGENT_STREAMING = "off"; // the mock below answers plain JSON; streaming has its own test (try-streaming.ts)
 
 import { modelCallTimeoutMs, runAgent, toolPhaseBudgetMs } from "../lib/agent/loop";
 import { isDriverAnalysis, maxIterationsFor } from "../lib/agent/intent";

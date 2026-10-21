@@ -10,7 +10,7 @@ import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
 import { validateQuestion } from "@/lib/validation";
 import { NEW_QUESTION_EVENT, THREAD_ACTIVITY_EVENT, type ThreadActivity } from "./layout/events";
 import { AgentTrace } from "./agent-trace";
-import { AnswerView } from "./answer-view";
+import { AnswerView, DraftAnswer } from "./answer-view";
 import { SavedTime } from "./history/saved-time";
 import { ExampleQuestions } from "./research/example-questions";
 import { QuestionComposer } from "./research/question-composer";
@@ -46,6 +46,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   const router = useRouter();
   const [steps, setSteps] = useState<TraceStep[]>([]);
   const [result, setResult] = useState<AgentResult | null>(null);
+  const [draftAnswer, setDraftAnswer] = useState(""); // provisional prose while the answer is written; replaced by `result`
   const abortRef = useRef<AbortController | null>(null);
 
   const follow = useFollowScroll(contentRef, loading || result !== null);
@@ -69,6 +70,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     setLimit(null);
     setSteps([]);
     setResult(null);
+    setDraftAnswer("");
     if (!initialThread) window.scrollTo({ top: 0 });
     follow(); // follow the new research as it grows, until the reader scrolls up
 
@@ -117,11 +119,14 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
           return;
         }
         if (event.type === "step") setSteps((prev) => [...prev, event.step]);
+        else if (event.type === "answer_delta") setDraftAnswer(event.text);
         else if (event.type === "final") {
           gotFinal = true;
+          setDraftAnswer("");
           setResult(event.result);
         } else if (event.type === "error") {
           gotFinal = true;
+          setDraftAnswer("");
           setRunError(event.message);
         }
       };
@@ -164,6 +169,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     setLimit(null);
     setSteps([]);
     setResult(null);
+    setDraftAnswer("");
   }, []);
 
   useEffect(() => {
@@ -231,6 +237,8 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
           </StatePanel>
         </div>
       )}
+
+      {draftAnswer && !result && !runError && <DraftAnswer text={draftAnswer} />}
 
       {result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked ?? undefined} />}
     </div>

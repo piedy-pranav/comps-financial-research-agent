@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     const runThreadId = threadId;
 
     const stream = createAgentStream(question, {
-      run: (q, onStep, signal) => runAgent(q, onStep, signal, priorContext),
+      run: (q, onStep, signal, onAnswerDelta) => runAgent(q, onStep, signal, priorContext, onAnswerDelta),
       save: async (record) => {
         // createAdminClient throws if env vars are missing; createAgentStream treats that as a failed save.
         const { error } = await createAdminClient()

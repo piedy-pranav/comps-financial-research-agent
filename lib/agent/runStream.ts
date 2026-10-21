@@ -10,7 +10,12 @@ export type RunRecord = {
 };
 
 export type StreamDeps = {
-  run(question: string, onStep: (step: TraceStep) => void, signal: AbortSignal): Promise<AgentResult>;
+  run(
+    question: string,
+    onStep: (step: TraceStep) => void,
+    signal: AbortSignal,
+    onAnswerDelta: (text: string) => void,
+  ): Promise<AgentResult>;
   save(record: RunRecord): Promise<void>; // should throw on failure
   saveTimeoutMs?: number;
 };
@@ -51,7 +56,13 @@ export function createAgentStream(question: string, deps: StreamDeps): ReadableS
       };
 
       try {
-        const result = await deps.run(question, (step) => send({ type: "step", step }), abort.signal);
+        // Previews are display-only: they are never saved, and `final` always follows (or `error`).
+        const result = await deps.run(
+          question,
+          (step) => send({ type: "step", step }),
+          abort.signal,
+          (text) => send({ type: "answer_delta", text }),
+        );
         // Saved before `final` so the next request already sees this run when usage is counted (Step 3).
         await saveBestEffort(deps, {
           question,

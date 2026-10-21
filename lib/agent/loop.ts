@@ -4,6 +4,7 @@
 // gets what was found plus what is missing. runAgent never throws.
 import Anthropic from "@anthropic-ai/sdk";
 import { maxIterationsFor } from "./intent";
+import { extractAnswerMarkdown } from "./partialJson";
 import { buildUserMessage, SYSTEM_PROMPT } from "./prompt";
 import {
   ALL_TOOL_DEFINITIONS,
@@ -82,15 +83,66 @@ function userFacingApiError(err: unknown, cancelled: boolean): string {
   return "Something went wrong. Please try again.";
 }
 
+const DELTA_INTERVAL_MS = 100; // at most ~10 provisional-answer updates per second
+
+// Streaming is on unless AGENT_STREAMING=off (a kill switch, and what the offline tests with a non-SSE mock use).
+const streamingEnabled = () => process.env.AGENT_STREAMING !== "off";
+
+// Same request as the non-streaming call, but consumed as a stream so the in-progress `answer_markdown` of a
+// final_answer tool call can be shown while it is generated. The returned message is the complete one, so everything
+// after this (validation, citation resolution, persistence) is unchanged. Delta problems never throw: a listener
+// error only stops further previews.
+async function streamModel(
+  params: Anthropic.Beta.MessageCreateParamsNonStreaming,
+  options: { timeout: number; maxRetries: number; signal?: AbortSignal },
+  onAnswerDelta: (text: string) => void,
+) {
+  const stream = getClient().beta.messages.stream(params, options);
+  const blocks = new Map<number, { isFinal: boolean; json: string }>();
+  let lastText = "";
+  let lastEmit = 0;
+  let broken = false;
+
+  const flush = (json: string, force: boolean) => {
+    if (broken) return;
+    try {
+      const text = extractAnswerMarkdown(json);
+      if (text === null || text === lastText || (!force && Date.now() - lastEmit < DELTA_INTERVAL_MS)) return;
+      lastText = text;
+      lastEmit = Date.now();
+      if (text) onAnswerDelta(text);
+    } catch (err) {
+      broken = true;
+      console.error("[agent] answer preview stopped:", err instanceof Error ? err.message : err);
+    }
+  };
+
+  stream.on("streamEvent", (ev) => {
+    if (ev.type === "content_block_start") {
+      blocks.set(ev.index, { isFinal: ev.content_block.type === "tool_use" && ev.content_block.name === "final_answer", json: "" });
+    } else if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
+      const b = blocks.get(ev.index);
+      if (!b?.isFinal) return;
+      b.json += ev.delta.partial_json;
+      flush(b.json, false);
+    } else if (ev.type === "content_block_stop") {
+      const b = blocks.get(ev.index);
+      if (b?.isFinal) flush(b.json, true);
+    }
+  });
+  return stream.finalMessage();
+}
+
 async function callModel(
   model: string,
   messages: Anthropic.Beta.BetaMessageParam[],
   tools: Anthropic.Beta.BetaTool[],
   timeoutMs: number,
   signal?: AbortSignal,
+  onAnswerDelta?: (text: string) => void,
 ) {
   const isSonnet = model.startsWith("claude-sonnet-5-5");
-  const response = await getClient().beta.messages.create({
+  const params = {
     model,
     max_tokens: 8000,
     system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
@@ -100,7 +152,30 @@ async function callModel(
     output_config: { effort: "medium" },
     // Refusal fallback is Sonnet-only; Haiku has no server-side fallback.
     ...(isSonnet ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
-  } as Anthropic.Beta.MessageCreateParamsNonStreaming, { timeout: timeoutMs, maxRetries: 1, signal });
+  } as Anthropic.Beta.MessageCreateParamsNonStreaming;
+
+  const started = Date.now();
+  let response: Anthropic.Beta.BetaMessage;
+  if (onAnswerDelta && streamingEnabled()) {
+    try {
+      // Eager input streaming makes the API send final_answer's input as it is generated instead of in a few large
+      // pieces. Streaming path only; the fallback below uses the unmodified params.
+      const streamParams = {
+        ...params,
+        tools: tools.map((t) => (t.name === "final_answer" ? { ...t, eager_input_streaming: true } : t)),
+      } as Anthropic.Beta.MessageCreateParamsNonStreaming;
+      response = await streamModel(streamParams, { timeout: timeoutMs, maxRetries: 1, signal }, onAnswerDelta);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      // Streaming must never break a request: retry once the original way, within the remaining time budget.
+      const remaining = timeoutMs - (Date.now() - started);
+      console.warn("[agent] streaming call failed, retrying without streaming:", err instanceof Error ? err.message : err);
+      if (remaining < MIN_CALL_MS) throw err;
+      response = await getClient().beta.messages.create(params, { timeout: remaining, maxRetries: 1, signal });
+    }
+  } else {
+    response = await getClient().beta.messages.create(params, { timeout: timeoutMs, maxRetries: 1, signal });
+  }
 
   if (process.env.NODE_ENV !== "production") {
     const u = response.usage;
@@ -116,6 +191,7 @@ export async function runAgent(
   onStep: (step: TraceStep) => void,
   signal?: AbortSignal, // aborted when the user disconnects: stop spending tokens
   priorContext = "", // formatted earlier turns of the thread (context only, never evidence); "" for a new thread
+  onAnswerDelta?: (text: string) => void, // provisional preview of the final answer prose; the returned result is the truth
 ): Promise<AgentResult> {
   const model = process.env.LLM_MODEL || DEFAULT_MODEL;
   const ctx = createToolContext();
@@ -160,7 +236,7 @@ export async function runAgent(
 
     let response: Anthropic.Beta.BetaMessage;
     try {
-      response = await callModel(model, messages, tools, callTimeout, signal);
+      response = await callModel(model, messages, tools, callTimeout, signal, onAnswerDelta);
     } catch (err) {
       return failedResult("error", userFacingApiError(err, !!signal?.aborted), trace);
     }

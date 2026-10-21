@@ -350,8 +350,12 @@ History lists threads by `updated_at` desc with title and question count. `/hist
 ### STREAM-002 — Event types
 The shared `AgentEvent` type is authoritative. Current semantic event sequence:
 - zero or more `step`
+- zero or more `answer_delta` while the final answer is being written (see STREAM-006)
 - then exactly one `final`
 - or an `error` if the route itself cannot complete
+
+### STREAM-006 — Provisional answer preview
+`answer_delta {text}` carries the cumulative, UNVERIFIED prose of `final_answer.answer_markdown` as the model generates it (at most ~10 per second, extracted by `lib/agent/partialJson.ts` from the streamed tool input). It is display-only: never persisted, never counted, never trusted; citation markers are hidden in the client preview. The `final` event (server-resolved, citation-verified) is the single source of truth and replaces the preview; a run that ends in `error` discards it and saves a failed run. Clients that ignore `answer_delta` still work. If the streaming model call fails for any reason other than a user cancel, the loop retries once without streaming within the remaining time budget, so streaming can never break a request. `AGENT_STREAMING=off` disables it. Saved runs are never replayed as streams.
 
 ### STREAM-003 — No proxy buffering
 Response headers should discourage buffering/caching so trace events appear live.
