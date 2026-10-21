@@ -6,7 +6,7 @@ delete process.env.AGENT_STREAMING;
 
 import { runAgent } from "../lib/agent/loop";
 import { createAgentStream, type RunRecord } from "../lib/agent/runStream";
-import type { AgentEvent } from "../lib/agent/types";
+import type { AgentEvent, AnswerExtras } from "../lib/agent/types";
 
 let failures = 0;
 function check(name: string, ok: boolean, detail?: unknown) {
@@ -19,9 +19,9 @@ const finalInput = {
   thought: "Off topic.",
   kind: "off_topic",
   answer_markdown: PROSE,
-  tables: [],
-  citations: [],
-  follow_ups: [],
+  tables: [{ title: "Gross margin", columns: ["FY", "NKE"], rows: [["FY2024", "$99.9B [1]"], ["FY2023", "—"]] }],
+  citations: [{ n: 1, key: "0000320187-24-000039" }, { n: 2, key: "bogus-key" }],
+  follow_ups: ["Next question one?", "Next question two?", "Next question three?"],
   clarification_options: [],
   notes: [],
 };
@@ -80,14 +80,21 @@ async function main() {
   // 1. Happy path: previews arrive before the call returns, grow monotonically, are prefixes of the final prose.
   mode = "stream"; streamCalls = 0; plainCalls = 0;
   const deltas: { t: number; text: string }[] = [];
+  const extras: AnswerExtras[] = [];
   const t0 = Date.now();
-  const r = await runAgent("What is the weather?", () => {}, undefined, "", (text) => deltas.push({ t: Date.now() - t0, text }));
+  const r = await runAgent("What is the weather?", () => {}, undefined, "", (text) => deltas.push({ t: Date.now() - t0, text }), (x) => extras.push(x));
   check("final result is the validated answer", r.answer.kind === "off_topic" && r.answer.answerMarkdown === PROSE && r.status === "failed", r.answer);
   check("used the streaming call only", streamCalls === 1 && plainCalls === 0, { streamCalls, plainCalls });
   check("multiple incremental previews", deltas.length >= 3, deltas.length);
   check("previews grow and are prefixes of the final prose", deltas.every((d, i) => PROSE.startsWith(d.text) && (i === 0 || d.text.length > deltas[i - 1].text.length)));
   check("last preview is the complete prose (flush at block end)", deltas[deltas.length - 1]?.text === PROSE);
   check("throttled (<= ~10/s)", deltas.length <= Math.ceil((deltas[deltas.length - 1].t + 150) / 100) + 1, deltas.map((d) => d.t));
+
+  const lastX = extras[extras.length - 1];
+  check("extras previewed, cumulative and growing", extras.length >= 2 && extras.every((x, i) => i === 0 || x.followUps.length >= extras[i - 1].followUps.length), extras.length);
+  check("extras: follow-ups and the no-figure row appear", lastX?.followUps.length === 3 && lastX.tables[0]?.rows.length === 1 && lastX.tables[0].rows[0][0] === "FY2023", lastX);
+  check("extras: figure never retrieved by a tool ($99.9B) is never previewed", !JSON.stringify(extras).includes("99.9"));
+  check("extras: unknown citation keys never become sources", extras.every((x) => x.sources.length === 0));
 
   // 2. Fallbacks: every streaming failure still yields the normal answer via the non-streaming call.
   for (const m of ["stream-500", "plain-json", "stream-badjson", "stream-cut"] as Mode[]) {
@@ -121,13 +128,14 @@ async function main() {
   const saved: RunRecord[] = [];
   const text = await new Response(
     createAgentStream("q", {
-      run: (q, onStep, signal, onDelta) => runAgent(q, onStep, signal, "", onDelta),
+      run: (q, onStep, signal, onDelta, onExtras) => runAgent(q, onStep, signal, "", onDelta, onExtras),
       save: async (rec) => void saved.push(rec),
     }),
   ).text();
   const events: AgentEvent[] = text.trim().split("\n").map((l) => JSON.parse(l));
   const types = events.map((e) => e.type);
   const firstFinal = types.indexOf("final");
+  check("answer_extras events are sent and precede final", types.includes("answer_extras") && types.lastIndexOf("answer_extras") < firstFinal, types);
   check("answer_delta events precede a single final", types.includes("answer_delta") && types.lastIndexOf("answer_delta") < firstFinal && types.filter((t) => t === "final").length === 1 && types[types.length - 1] === "final", types);
   check("deltas are not persisted: one save, the validated answer", saved.length === 1 && saved[0].answer === PROSE && (saved[0].trace as { answer: { kind: string } }).answer.kind === "off_topic", saved);
 

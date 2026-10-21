@@ -2,7 +2,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { rewriteQuestion } from "../clarify";
 import { NonRetryableError } from "../errors";
-import type { AnswerKind, Clarification, FinalAnswer, Source, ToolName } from "../types";
+import type { PreviewParts } from "../partialJson";
+import type { AnswerExtras, AnswerKind, AnswerTable, Clarification, FinalAnswer, Source, ToolName } from "../types";
 import { calculate } from "./calculate";
 import { getFinancials } from "./getFinancials";
 import { lookupTicker } from "./lookupTicker";
@@ -407,6 +408,31 @@ export function resolveFinalAnswer(input: FinalAnswerInput, ctx: ToolContext, qu
   }
 
   return { kind, answerMarkdown, tables, sources, followUps, notes };
+}
+
+// Preview of the tables, sources and follow-ups the model has finished writing, for the progressive stream. It only
+// passes what the final check would also accept: a source whose key a tool returned, and table rows whose figures all
+// match data the tools retrieved (the same figuresIn/ctx.figures test resolveFinalAnswer applies). Rows with an
+// unmatched figure are withheld here (the final answer still shows them, with its note). Citation markers are left
+// as written; the client hides them in previews. The `final` event remains the only authoritative result.
+export function previewExtras(parts: PreviewParts, ctx: ToolContext): AnswerExtras {
+  const seen = new Set<number>();
+  const sources: Source[] = [];
+  for (const c of parts.citations) {
+    const meta = ctx.citations.get(c.key);
+    if (!meta || seen.has(c.n)) continue;
+    seen.add(c.n);
+    sources.push(toSource(c.n, meta));
+  }
+  sources.sort((a, b) => a.n - b.n);
+
+  const tables: AnswerTable[] = [];
+  for (const t of parts.tables) {
+    if (t.title === null || t.columns === null) continue; // wait for the header
+    const rows = t.rows.filter((row) => figuresIn(row.join("\n")).every((f) => ctx.figures.has(normalizeFigure(f))));
+    tables.push({ title: t.title, columns: t.columns, rows });
+  }
+  return { tables, sources, followUps: parts.followUps.slice(0, 3) };
 }
 
 export type { ToolName };

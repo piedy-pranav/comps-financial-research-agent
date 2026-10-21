@@ -1,6 +1,6 @@
 // NDJSON stream for /api/agent, with run persistence. Kept free of Next/Supabase imports (they come in
 // through `deps`) so scripts can test the failure paths without a browser session.
-import type { AgentEvent, AgentResult, TraceStep } from "./types";
+import type { AgentEvent, AgentResult, AnswerExtras, TraceStep } from "./types";
 
 export type RunRecord = {
   question: string;
@@ -15,6 +15,7 @@ export type StreamDeps = {
     onStep: (step: TraceStep) => void,
     signal: AbortSignal,
     onAnswerDelta: (text: string) => void,
+    onAnswerExtras: (extras: AnswerExtras) => void,
   ): Promise<AgentResult>;
   save(record: RunRecord): Promise<void>; // should throw on failure
   saveTimeoutMs?: number;
@@ -62,6 +63,7 @@ export function createAgentStream(question: string, deps: StreamDeps): ReadableS
           (step) => send({ type: "step", step }),
           abort.signal,
           (text) => send({ type: "answer_delta", text }),
+          (extras) => send({ type: "answer_extras", ...extras }),
         );
         // Saved before `final` so the next request already sees this run when usage is counted (Step 3).
         await saveBestEffort(deps, {

@@ -1,16 +1,17 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import { useEffect, type ComponentProps, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { InfoIcon } from "@/components/ui/icons";
-import type { AgentResult, AnswerKind } from "@/lib/agent/types";
+import type { AgentResult, AnswerExtras, AnswerKind, AnswerTable as AnswerTableData } from "@/lib/agent/types";
 import { stripMarkersForDraft } from "@/lib/agent/partialJson";
 import { SpinnerIcon } from "@/components/ui/icons";
 import { AnswerTable } from "./research/answer-table";
 import { ClarifyChoices } from "./research/clarify-choices";
 import { linkMarkers, markdownMarkerClass } from "./research/citation-marker";
 import { FollowUpList } from "./research/follow-up-list";
+import { usePacedCount, usePacedText } from "./research/use-reveal";
 import { SourcesList } from "./research/sources-list";
 import { StatePanel } from "./research/state-panel";
 
@@ -60,16 +61,79 @@ function Prose({ markdown, known }: { markdown: string; known: Set<string> }) {
   );
 }
 
-// Provisional answer prose while the final answer is still being written. Unverified: citation markers are hidden, and
-// tables, sources and notes only appear with the validated result that replaces this.
-export function DraftAnswer({ text }: { text: string }) {
+// The answer while it is still being written: the prose, then tables, sources and follow-ups, each revealed at a
+// readable pace as it arrives. Everything here is a PREVIEW: the prose is unverified, markers are hidden, and only
+// rows/sources the server already verified are shown. `done` means the validated answer has arrived: the preview
+// finishes quickly and then calls onDrained so the validated AnswerView takes over.
+export function DraftAnswer({
+  text,
+  extras,
+  done,
+  onDrained,
+}: {
+  text: string;
+  extras: AnswerExtras | null;
+  done: boolean;
+  onDrained: () => void;
+}) {
+  const { text: shown, drained } = usePacedText(stripMarkersForDraft(text), done);
+
+  // Reveal units in page order: per table a header then its rows, then sources, then follow-ups.
+  const tables = extras?.tables ?? [];
+  const sources = extras?.sources ?? [];
+  const followUps = extras?.followUps ?? [];
+  const total = tables.reduce((n, t) => n + 1 + t.rows.length, 0) + sources.length + followUps.length;
+  const visible = usePacedCount(total, drained, done);
+  const allShown = drained && visible >= total;
+
+  useEffect(() => {
+    if (!done) return;
+    if (allShown) {
+      onDrained();
+      return;
+    }
+    const t = setTimeout(onDrained, 2500); // never hold the validated answer back for long
+    return () => clearTimeout(t);
+  }, [done, allShown, onDrained]);
+
+  let left = visible;
+  const shownTables: AnswerTableData[] = [];
+  for (const t of tables) {
+    if (left <= 0) break;
+    left -= 1;
+    const rows = t.rows.slice(0, left).map((r) => r.map(stripMarkersForDraft));
+    left -= rows.length;
+    shownTables.push({ ...t, rows });
+  }
+  const shownSources = sources.slice(0, Math.max(0, left));
+  left -= shownSources.length;
+  const shownFollowUps = followUps.slice(0, Math.max(0, left));
+
+  const status = !drained ? "Writing the answer" : !done ? "Checking sources and building tables" : null;
   return (
     <section aria-label="Answer (writing)" aria-busy="true" className="mt-8">
-      <p className="mb-3 flex items-center gap-2 text-xs text-ink-3">
-        <SpinnerIcon size={12} />
-        Writing the answer
-      </p>
-      <Prose markdown={stripMarkersForDraft(text)} known={new Set()} />
+      {status && (
+        <p className="mb-3 flex items-center gap-2 text-xs text-ink-3">
+          <SpinnerIcon size={12} />
+          {status}
+        </p>
+      )}
+      <Prose markdown={shown} known={new Set()} />
+      {shownTables.map((table, ti) => (
+        <div key={ti} className="reveal">
+          <AnswerTable table={table} known={new Set()} />
+        </div>
+      ))}
+      {shownSources.length > 0 && (
+        <div className="reveal">
+          <SourcesList sources={shownSources} />
+        </div>
+      )}
+      {shownFollowUps.length > 0 && (
+        <div className="reveal">
+          <FollowUpList questions={shownFollowUps} onAsk={() => {}} disabled />
+        </div>
+      )}
     </section>
   );
 }

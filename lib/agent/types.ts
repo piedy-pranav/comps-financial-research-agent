@@ -54,6 +54,9 @@ export type Source =
 
 export type AnswerTable = { title: string; columns: string[]; rows: string[][] };
 
+// What the stream previews before `final`: only rows, sources and follow-ups the server already verified.
+export type AnswerExtras = { tables: AnswerTable[]; sources: Source[]; followUps: string[] };
+
 // Set when a company name matched several SEC filers and the user must choose (SPEC AGENT-009).
 export type Clarification = {
   query: string; // the name that was ambiguous, e.g. "Delta"
@@ -80,6 +83,7 @@ export type AgentResult = {
 // NDJSON events streamed from /api/agent (one JSON object per line)
 export type AgentEvent =
   | { type: "step"; step: TraceStep }
+  | ({ type: "answer_extras" } & AnswerExtras) // verified rows/sources/follow-ups written so far (cumulative); preview only
   | { type: "answer_delta"; text: string } // provisional final-answer prose so far (cumulative, unverified); only `final` is authoritative
   | { type: "final"; result: AgentResult }
   | { type: "error"; message: string };

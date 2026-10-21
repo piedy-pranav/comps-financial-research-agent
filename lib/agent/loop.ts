@@ -4,18 +4,19 @@
 // gets what was found plus what is missing. runAgent never throws.
 import Anthropic from "@anthropic-ai/sdk";
 import { maxIterationsFor } from "./intent";
-import { extractAnswerMarkdown } from "./partialJson";
+import { extractAnswerMarkdown, extractPreviewParts, type PreviewParts } from "./partialJson";
 import { buildUserMessage, SYSTEM_PROMPT } from "./prompt";
 import {
   ALL_TOOL_DEFINITIONS,
   createToolContext,
   executeTool,
   FINAL_ANSWER_TOOL,
+  previewExtras,
   resolveFinalAnswer,
   TOOLS,
   type ToolResult,
 } from "./tools";
-import type { AgentResult, AnswerKind, FinalAnswer, ToolName, TraceStep } from "./types";
+import type { AgentResult, AnswerExtras, AnswerKind, FinalAnswer, ToolName, TraceStep } from "./types";
 
 const DEADLINE_MS = 90_000; // after this, the next model call may only submit final_answer
 const HARD_LIMIT_MS = 115_000; // nothing may run past this (route maxDuration is 120s)
@@ -96,21 +97,34 @@ async function streamModel(
   params: Anthropic.Beta.MessageCreateParamsNonStreaming,
   options: { timeout: number; maxRetries: number; signal?: AbortSignal },
   onAnswerDelta: (text: string) => void,
+  onParts?: (parts: PreviewParts) => void,
 ) {
   const stream = getClient().beta.messages.stream(params, options);
   const blocks = new Map<number, { isFinal: boolean; json: string }>();
   let lastText = "";
+  let lastParts = "";
   let lastEmit = 0;
   let broken = false;
 
   const flush = (json: string, force: boolean) => {
     if (broken) return;
     try {
+      if (!force && Date.now() - lastEmit < DELTA_INTERVAL_MS) return;
       const text = extractAnswerMarkdown(json);
-      if (text === null || text === lastText || (!force && Date.now() - lastEmit < DELTA_INTERVAL_MS)) return;
-      lastText = text;
+      const parts = onParts ? extractPreviewParts(json) : null;
+      const partsKey = parts ? JSON.stringify(parts) : "";
+      const textChanged = text !== null && text !== lastText;
+      const partsChanged = parts !== null && partsKey !== lastParts;
+      if (!textChanged && !partsChanged) return;
       lastEmit = Date.now();
-      if (text) onAnswerDelta(text);
+      if (textChanged) {
+        lastText = text;
+        if (text) onAnswerDelta(text);
+      }
+      if (partsChanged && parts) {
+        lastParts = partsKey;
+        onParts?.(parts);
+      }
     } catch (err) {
       broken = true;
       console.error("[agent] answer preview stopped:", err instanceof Error ? err.message : err);
@@ -140,6 +154,7 @@ async function callModel(
   timeoutMs: number,
   signal?: AbortSignal,
   onAnswerDelta?: (text: string) => void,
+  onParts?: (parts: PreviewParts) => void,
 ) {
   const isSonnet = model.startsWith("claude-sonnet-5-5");
   const params = {
@@ -164,7 +179,7 @@ async function callModel(
         ...params,
         tools: tools.map((t) => (t.name === "final_answer" ? { ...t, eager_input_streaming: true } : t)),
       } as Anthropic.Beta.MessageCreateParamsNonStreaming;
-      response = await streamModel(streamParams, { timeout: timeoutMs, maxRetries: 1, signal }, onAnswerDelta);
+      response = await streamModel(streamParams, { timeout: timeoutMs, maxRetries: 1, signal }, onAnswerDelta, onParts);
     } catch (err) {
       if (signal?.aborted) throw err;
       // Streaming must never break a request: retry once the original way, within the remaining time budget.
@@ -192,6 +207,7 @@ export async function runAgent(
   signal?: AbortSignal, // aborted when the user disconnects: stop spending tokens
   priorContext = "", // formatted earlier turns of the thread (context only, never evidence); "" for a new thread
   onAnswerDelta?: (text: string) => void, // provisional preview of the final answer prose; the returned result is the truth
+  onAnswerExtras?: (extras: AnswerExtras) => void, // verified tables rows, sources and follow-ups written so far (preview only)
 ): Promise<AgentResult> {
   const model = process.env.LLM_MODEL || DEFAULT_MODEL;
   const ctx = createToolContext();
@@ -205,6 +221,9 @@ export async function runAgent(
       console.error("[agent] onStep listener failed:", err instanceof Error ? err.message : err);
     }
   };
+
+  // Previews are verified against this run's own citation registry before they leave the loop.
+  const onParts = onAnswerExtras ? (parts: PreviewParts) => onAnswerExtras(previewExtras(parts, ctx)) : undefined;
 
   const start = Date.now();
   const messages: Anthropic.Beta.BetaMessageParam[] = [
@@ -236,7 +255,7 @@ export async function runAgent(
 
     let response: Anthropic.Beta.BetaMessage;
     try {
-      response = await callModel(model, messages, tools, callTimeout, signal, onAnswerDelta);
+      response = await callModel(model, messages, tools, callTimeout, signal, onAnswerDelta, onParts);
     } catch (err) {
       return failedResult("error", userFacingApiError(err, !!signal?.aborted), trace);
     }

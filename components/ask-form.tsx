@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentEvent, AgentResult, TraceStep } from "@/lib/agent/types";
+import type { AgentEvent, AgentResult, AnswerExtras, TraceStep } from "@/lib/agent/types";
 import type { ThreadDetail } from "@/lib/history";
 import type { UsageDenial } from "@/lib/usage-types";
 import { PRO_DAILY_LIMIT, PRO_PRICE_USD } from "@/lib/plans";
@@ -47,6 +47,9 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
   const [steps, setSteps] = useState<TraceStep[]>([]);
   const [result, setResult] = useState<AgentResult | null>(null);
   const [draftAnswer, setDraftAnswer] = useState(""); // provisional prose while the answer is written; replaced by `result`
+  const [draftExtras, setDraftExtras] = useState<AnswerExtras | null>(null); // verified preview rows/sources/follow-ups
+  const [draftDone, setDraftDone] = useState(false); // the preview has finished revealing after `final` arrived
+  const refreshPending = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const follow = useFollowScroll(contentRef, loading || result !== null);
@@ -71,6 +74,9 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     setSteps([]);
     setResult(null);
     setDraftAnswer("");
+    setDraftExtras(null);
+    setDraftDone(false);
+    refreshPending.current = false;
     if (!initialThread) window.scrollTo({ top: 0 });
     follow(); // follow the new research as it grows, until the reader scrolls up
 
@@ -109,6 +115,7 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       const decoder = new TextDecoder();
       let buffer = "";
       let gotFinal = false;
+      let gotResult = false;
 
       const handleLine = (line: string) => {
         if (!line.trim()) return;
@@ -120,13 +127,15 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
         }
         if (event.type === "step") setSteps((prev) => [...prev, event.step]);
         else if (event.type === "answer_delta") setDraftAnswer(event.text);
+        else if (event.type === "answer_extras") setDraftExtras({ tables: event.tables, sources: event.sources, followUps: event.followUps });
         else if (event.type === "final") {
           gotFinal = true;
-          setDraftAnswer("");
-          setResult(event.result);
+          gotResult = true;
+          setResult(event.result); // the preview (if any) finishes revealing, then this takes over
         } else if (event.type === "error") {
           gotFinal = true;
           setDraftAnswer("");
+          setDraftExtras(null);
           setRunError(event.message);
         }
       };
@@ -142,7 +151,10 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       handleLine(buffer);
 
       // The run is persisted by now, so re-render the server-side plan badge with the new remaining count.
-      if (gotFinal) router.refresh();
+      // With a result, refresh once it is actually on screen (see the effect below), so the saved turn does not
+      // replace a preview that is still finishing. Errors have nothing to wait for.
+      if (gotFinal && !gotResult) router.refresh();
+      else if (gotResult) refreshPending.current = true;
       if (!gotFinal) setRunError("The connection ended before an answer arrived. Please try again.");
     } catch {
       // A reset or unmount aborts the request on purpose; that is not an error to show.
@@ -170,6 +182,9 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
     setSteps([]);
     setResult(null);
     setDraftAnswer("");
+    setDraftExtras(null);
+    setDraftDone(false);
+    refreshPending.current = false;
   }, []);
 
   useEffect(() => {
@@ -179,6 +194,18 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
       abortRef.current?.abort();
     };
   }, [reset]);
+
+  // The validated answer is shown once any preview has finished revealing (or immediately if there was none).
+  const resultVisible = result !== null && (!draftAnswer || draftDone);
+  const previewVisible = !!draftAnswer && !runError && !(result !== null && draftDone);
+  const handleDrained = useCallback(() => setDraftDone(true), []);
+
+  useEffect(() => {
+    if (resultVisible && refreshPending.current) {
+      refreshPending.current = false;
+      router.refresh();
+    }
+  }, [resultVisible, router]);
 
   const started = asked !== null;
   const liveVisible = started && (!initialThread || turns.length === liveBase);
@@ -238,9 +265,9 @@ export function AskForm({ initialThread }: { initialThread?: ThreadDetail }) {
         </div>
       )}
 
-      {draftAnswer && !result && !runError && <DraftAnswer text={draftAnswer} />}
+      {previewVisible && <DraftAnswer text={draftAnswer} extras={draftExtras} done={result !== null} onDrained={handleDrained} />}
 
-      {result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked ?? undefined} />}
+      {resultVisible && result && <AnswerView result={result} onAsk={(q) => void ask(q)} retryQuestion={asked ?? undefined} />}
     </div>
   );
 

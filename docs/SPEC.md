@@ -357,6 +357,8 @@ The shared `AgentEvent` type is authoritative. Current semantic event sequence:
 ### STREAM-006 — Provisional answer preview
 `answer_delta {text}` carries the cumulative, UNVERIFIED prose of `final_answer.answer_markdown` as the model generates it (at most ~10 per second, extracted by `lib/agent/partialJson.ts` from the streamed tool input). It is display-only: never persisted, never counted, never trusted; citation markers are hidden in the client preview. The `final` event (server-resolved, citation-verified) is the single source of truth and replaces the preview; a run that ends in `error` discards it and saves a failed run. Clients that ignore `answer_delta` still work. If the streaming model call fails for any reason other than a user cancel, the loop retries once without streaming within the remaining time budget, so streaming can never break a request. `AGENT_STREAMING=off` disables it. Saved runs are never replayed as streams.
 
+Tables, sources and follow-ups are previewed the same way with `answer_extras {tables, sources, followUps}` (cumulative). The server sends only what it already verified against this run's registry: a table row only when every figure in it matches data a tool returned (the same `figuresIn`/`ctx.figures` test the final check uses), a source only when its key was returned by a tool, and never a half-written row, citation or follow-up. Rows withheld here still appear in `final` with the usual note. The client reveals preview content at a readable pace and shows the validated answer only after the preview has finished (at most ~2.5 s later).
+
 ### STREAM-003 — No proxy buffering
 Response headers should discourage buffering/caching so trace events appear live.
 
