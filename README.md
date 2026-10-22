@@ -170,16 +170,6 @@ The full gate order and what "done" means are in [eval/README.md](eval/README.md
 - The SEC data cache and the audit rate limit (10 per user per hour) are in memory, so they reset on every deploy or restart and aren't shared across replicas.
 - Research answers don't count clarifications, declines or errors as usage. Audits never count against research questions.
 
-## Team
-
-| Step | Owner |
-|---|---|
-| Step 1: Foundation (Next.js, Supabase auth, database, base UI, Railway) | Yash |
-| Step 2: The ReAct agent and its tools (`lib/agent/`), streaming, threads, comparability audit | Pranav |
-| Step 3: Stripe Pro upgrade and usage limits (`lib/usage.ts`, `lib/stripe.ts`, `lib/billing.ts`, checkout and webhook routes) | Hans and Pranav |
-| Steps 4 and 5: Frontend polish, QA, write-up and slides | Forum and Reyn |
-| Deployment (Railway, production configuration) | Yash |
-
 ## Docs
 
 Read in this order when changing code (see [CLAUDE.md](CLAUDE.md)):
