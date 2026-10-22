@@ -1,12 +1,11 @@
 import Link from "next/link";
-import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge, ReadinessLegend } from "@/components/audit/integrity-badges";
-import { AlertIcon, ArrowUpRightIcon, CheckIcon, InfoIcon } from "@/components/ui/icons";
-import { BASIS_LABEL, INTEGRITY_SUBTITLE, INTEGRITY_TITLE, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
-import type { Readiness, ResearchAuditFinding, ResearchAuditSummary } from "@/lib/audit/types";
+import { CheckStatusIcon, ReadinessBadge } from "@/components/audit/integrity-badges";
+import { AlertIcon, ArrowUpRightIcon, CheckIcon, ChevronRightIcon, InfoIcon } from "@/components/ui/icons";
+import { BASIS_LABEL, CHECK_LABEL, INTEGRITY_SUBTITLE, INTEGRITY_TITLE, READINESS_EXPLANATION, STATUS_LABEL } from "@/lib/audit/report";
+import type { CheckStatus, Readiness, ResearchAuditFinding, ResearchAuditSummary } from "@/lib/audit/types";
 
 const COVERAGE =
   "Integrity checks cover revenue, operating income, operating margin and net income where sufficient evidence is available. Other metrics in this research have not been audited.";
-const NOT_ASSESSED_ANYWHERE = "Not assessed for any metric: accounting-policy and footnote equivalence.";
 
 const STATUS_TEXT: Record<ResearchAuditFinding["status"], string> = {
   COMPARABLE: "text-pos",
@@ -39,63 +38,126 @@ function EvidenceLinks({ urls }: { urls: string[] }) {
   );
 }
 
-// "Operating income, Operating margin (NKE vs UAA)" for the summary lines.
-function metricList(findings: ResearchAuditFinding[], multiPair: boolean) {
-  return findings.map((f) => (multiPair ? `${f.metric} (${f.pair})` : f.metric)).join(", ");
+const HISTORY = new Set(["series_continuity", "tag_lineage"]); // each company's own series: shown as the trend
+const LIMITS = new Set(["revisions", "accounting_policy"]); // fixed coverage limits: stated once in the footer
+
+const nameOf = (f: ResearchAuditFinding, multiPair: boolean) => (multiPair ? `${f.metric} (${f.pair})` : f.metric);
+// Operating margin inherits its inputs' checks with a "Revenue: " / "Operating income: " prefix; the same fact then
+// reads identically for both metrics and is listed once.
+const plain = (finding: string) => finding.replace(/^(Revenue|Operating income): /, "");
+
+type Line = { status: CheckStatus; title: string; text: string };
+
+// Metrics that share a verdict, the same reasons and the same next step are shown as one entry.
+function groupBy<T>(items: ResearchAuditFinding[], key: (f: ResearchAuditFinding) => string, make: (f: ResearchAuditFinding[]) => T): T[] {
+  const groups = new Map<string, ResearchAuditFinding[]>();
+  for (const f of items) groups.set(key(f), [...(groups.get(key(f)) ?? []), f]);
+  return [...groups.values()].map(make);
 }
 
-// Why a metric's comparison is not supported: the first sentence of its first failing check, without the
-// "Operating income:" prefix an inherited (margin) check carries.
-function blockReason(f: ResearchAuditFinding): string {
-  const fail = f.checks?.find((c) => c.status === "FAIL");
-  if (!fail) return "the evidence does not support it.";
-  const text = fail.finding.replace(/^(Revenue|Operating income): /, "");
-  return /^.*?\.(?=\s|$)/.exec(text)?.[0] ?? text;
+function currentLines(f: ResearchAuditFinding): Line[] {
+  const lines = (f.checks ?? [])
+    .filter((c) => !HISTORY.has(c.id) && !LIMITS.has(c.id))
+    // A blocked metric lists what blocks or qualifies it; checks skipped because a value is missing are in the detailed audit.
+    .filter((c) => f.readiness !== "BLOCKED" || c.status === "FAIL" || c.status === "CAUTION")
+    .map((c) => ({ status: c.status, title: c.title, text: plain(c.finding) }));
+  return lines.filter((l, i) => lines.findIndex((x) => x.text === l.text) === i);
 }
 
-// V2: one audited conclusion (metric x pair) with its readiness, what limits it and what to do next.
-function IntegrityFinding({ f, multiPair }: { f: ResearchAuditFinding; multiPair: boolean }) {
-  // Fixed coverage limits are stated once in the footer, not repeated per metric. A blocked metric lists only what
-  // blocks or qualifies it; checks skipped because a value is missing are in the detailed audit.
-  const flagged = (f.checks ?? []).filter(
-    (c) => c.id !== "revisions" && c.id !== "accounting_policy" && (f.readiness !== "BLOCKED" || c.status === "FAIL" || c.status === "CAUTION"),
+function CheckLines({ lines }: { lines: Line[] }) {
+  if (!lines.length) return null;
+  return (
+    <ul className="mt-1 space-y-0.5">
+      {lines.map((l, i) => (
+        <li key={i} title={l.title} className="flex items-start gap-1.5 text-xs leading-5 text-ink-2">
+          <CheckStatusIcon status={l.status} />
+          <span className="min-w-0 [overflow-wrap:anywhere]">
+            <span className="sr-only">{CHECK_LABEL[l.status]}, {l.title}: </span>
+            {l.text}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
-  const basis = Object.entries(f.sourceBasis ?? {});
+}
+
+// One entry: metrics with the same readiness and reasons. Comparability status and source basis per metric are
+// secondary, so they sit in a disclosure.
+function IntegrityGroup({ items, multiPair }: { items: ResearchAuditFinding[]; multiPair: boolean }) {
+  const f = items[0];
+  const readiness = f.readiness!;
+  const urls = [...new Set(items.flatMap((x) => x.evidenceUrls))];
   return (
     <li className="text-[13px] leading-5">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-medium text-ink">{f.metric}</span>
-          {multiPair && <span className="text-ink-4">· {f.pair}</span>}
-          <ReadinessBadge readiness={f.readiness!} size="sm" />
-          <span className={`text-xs ${STATUS_TEXT[f.status]}`}>Comparability status: {STATUS_LABEL[f.status]}</span>
-        </div>
-        {f.conclusion && <p className="mt-0.5 text-ink-2">{f.conclusion}</p>}
-        {flagged.length > 0 && (
-          <ul className="mt-1.5 space-y-1">
-            {flagged.map((c, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs leading-5 text-ink-2">
-                <CheckStatusIcon status={c.status} />
-                <span className="min-w-0 [overflow-wrap:anywhere]">
-                  <CheckStatusLabel status={c.status} /> <span className="text-ink-3">{c.title}{c.ticker ? ` (${c.ticker})` : ""}:</span> {c.finding}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {f.trend && (
-          <p className="mt-1 text-xs leading-5 text-ink-3">
-            Multi-year trend (separate from this year): <span className="font-medium text-ink-2">{READINESS_LABEL[f.trend.readiness]}</span>
-            {f.trend.readiness !== "READY" ? ` · ${f.trend.summary}` : ""}
-          </p>
-        )}
-        <p className="mt-1 text-xs leading-5 text-ink-3">
-          {basis.length > 0 && <>Source basis: {basis.map(([t, b]) => `${t} ${BASIS_LABEL[b].toLowerCase()}`).join(" · ")}. </>}
-          {f.readiness !== "READY" && f.analystAction && <>Next step: {f.analystAction}</>}
-        </p>
-        {f.readiness !== "READY" && <EvidenceLinks urls={f.evidenceUrls} />}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <ReadinessBadge readiness={readiness} size="sm" />
+        <span className="font-medium text-ink">{items.map((x) => nameOf(x, multiPair)).join(" · ")}</span>
       </div>
+      <p className="mt-0.5 text-xs leading-5 text-ink-3">
+        {readiness === "BLOCKED" && <span className="font-medium text-neg">Comparison not supported. </span>}
+        {READINESS_EXPLANATION[readiness]}
+      </p>
+      <CheckLines lines={currentLines(f)} />
+      {readiness !== "READY" && (f.analystAction || urls.length > 0) && (
+        <p className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs leading-5 text-ink-3">
+          {f.analystAction && (
+            <span>
+              <span className="font-medium text-ink-2">Next step:</span> {f.analystAction}
+            </span>
+          )}
+          <EvidenceLinks urls={urls} />
+        </p>
+      )}
+      <details className="group mt-0.5">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-ink-4 transition-colors hover:text-ink-2">
+          <ChevronRightIcon size={12} className="transition-transform group-open:rotate-90" />
+          Status and sources
+        </summary>
+        <ul className="mt-0.5 space-y-0.5 pl-4 text-xs leading-5 text-ink-3">
+          {items.map((x, i) => (
+            <li key={i}>
+              {nameOf(x, multiPair)}: comparability <span className={STATUS_TEXT[x.status]}>{STATUS_LABEL[x.status].toLowerCase()}</span>
+              {Object.entries(x.sourceBasis ?? {}).map(([t, b]) => ` · ${t} ${BASIS_LABEL[b].toLowerCase()}`).join("")}
+            </li>
+          ))}
+        </ul>
+      </details>
     </li>
+  );
+}
+
+// Multi-year findings, kept apart from the audited year: each metric's trend status, then every distinct finding
+// once, naming the metrics it affects when it is not all of them. Metrics whose audited year is already unsupported
+// are left out: their trend cannot be better.
+function TrendBlock({ findings, multiPair }: { findings: ResearchAuditFinding[]; multiPair: boolean }) {
+  const relevant = findings.filter((f) => f.trend && f.trend.readiness !== "READY" && f.readiness !== "BLOCKED");
+  if (!relevant.length) return null;
+  const lines: (Line & { metrics: string[] })[] = [];
+  for (const f of relevant) {
+    for (const c of (f.checks ?? []).filter((x) => HISTORY.has(x.id) && x.status !== "PASS")) {
+      const text = plain(c.finding);
+      const hit = lines.find((l) => l.text === text);
+      if (hit) hit.metrics.push(nameOf(f, multiPair));
+      else lines.push({ status: c.status, title: c.title, text, metrics: [nameOf(f, multiPair)] });
+    }
+  }
+  const anyBlocked = relevant.some((f) => f.trend!.readiness === "BLOCKED");
+  return (
+    <div className="mt-3 border-t border-line-subtle pt-3 text-[13px] leading-5">
+      <h3 className="text-xs font-medium text-ink-2">Multi-year trend (separate from the audited year)</h3>
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {relevant.map((f, i) => (
+          <span key={i} className="inline-flex items-center gap-1.5">
+            <span className="font-medium text-ink">{nameOf(f, multiPair)}</span>
+            <ReadinessBadge readiness={f.trend!.readiness} size="sm" />
+          </span>
+        ))}
+      </div>
+      <p className="mt-0.5 text-xs leading-5 text-ink-3">
+        {anyBlocked ? "Growth across a break in the annual series is not supported; years on either side remain usable." : "Qualify any trend with the points below."}
+      </p>
+      <CheckLines lines={lines.map((l) => ({ ...l, text: l.metrics.length < relevant.length ? `${l.text} (${l.metrics.join(", ")})` : l.text }))} />
+    </div>
   );
 }
 
@@ -137,18 +199,13 @@ function LegacyFindings({ audit, multiPair }: { audit: ResearchAuditSummary; mul
   );
 }
 
-// Deterministic integrity review shown above a research answer. The answer was generated (and streamed) before this
-// review ran and is never edited by it, so the review states which of the answer's comparisons to withhold or
-// qualify. Summaries saved before V2 have no readiness and render the earlier comparability view.
+// Deterministic integrity review shown below a research answer. The answer was generated (and streamed) before this
+// review ran and is never edited by it, so the review states which of the answer's comparisons are supported. Summaries saved before V2 have no readiness and render the earlier comparability view.
 export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }) {
   const pairs = [...new Set(audit.findings.map((f) => f.pair))];
   const multiPair = pairs.length > 1;
   const v2 = audit.findings.length > 0 && audit.findings.every((f) => f.readiness);
   const sorted = [...audit.findings].sort((a, b) => ORDER[a.readiness ?? "READY"] - ORDER[b.readiness ?? "READY"]);
-  const blocked = sorted.filter((f) => f.readiness === "BLOCKED");
-  const review = sorted.filter((f) => f.readiness === "REVIEW");
-  const ready = sorted.filter((f) => f.readiness === "READY");
-  const trendBlocked = sorted.filter((f) => f.readiness !== "BLOCKED" && f.trend && f.trend.readiness === "BLOCKED");
   const legacyIssues = audit.findings.some((f) => f.status !== "COMPARABLE");
 
   return (
@@ -173,46 +230,14 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
 
           {v2 ? (
             <>
-              <div role="note" className="mt-3 space-y-1.5 rounded-md border border-line bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
-                {blocked.length > 0 && (
-                  <div>
-                    <p>
-                      <span className="font-medium text-neg">Comparison not supported:</span> {metricList(blocked, multiPair)}. The sourced figures are shown,
-                      but do not use them to conclude which company performs better.
-                    </p>
-                    <ul className="mt-0.5 list-disc pl-5 text-xs leading-5 text-ink-3">
-                      {blocked.map((f, i) => (
-                        <li key={i}>
-                          {multiPair ? `${f.metric} (${f.pair})` : f.metric}: {blockReason(f)}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {review.length > 0 && (
-                  <p>
-                    <span className="font-medium text-warn">{READINESS_LABEL.REVIEW}:</span> {metricList(review, multiPair)}. Read the qualifications below before
-                    drawing conclusions.
-                  </p>
-                )}
-                {ready.length > 0 && (
-                  <p>
-                    <span className="font-medium text-pos">{READINESS_LABEL.READY}:</span> {metricList(ready, multiPair)}, for the audited year.
-                  </p>
-                )}
-                {trendBlocked.length > 0 && (
-                  <p className="border-t border-line-subtle pt-1.5">
-                    <span className="font-medium text-ink">Multi-year growth (separate from the audited year):</span> growth across a break in the annual series is
-                    not supported for {metricList(trendBlocked, multiPair)}. Years on either side of the break remain usable.
-                  </p>
-                )}
-                <p className="text-xs text-ink-4">The research answer above was written before this review and is not edited by it.</p>
-              </div>
               <ul className="mt-3 space-y-3">
-                {sorted.map((f, i) => (
-                  <IntegrityFinding key={i} f={f} multiPair={multiPair} />
-                ))}
+                {groupBy(sorted, (f) => `${f.readiness}|${f.readiness === "READY" ? "" : f.analystAction}|${JSON.stringify(currentLines(f).map((l) => l.text))}`, (items) => items).map(
+                  (items, i) => (
+                    <IntegrityGroup key={i} items={items} multiPair={multiPair} />
+                  ),
+                )}
               </ul>
+              <TrendBlock findings={sorted} multiPair={multiPair} />
             </>
           ) : (
             <LegacyFindings audit={audit} multiPair={multiPair} />
@@ -224,15 +249,14 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
         {audit.limitations.map((l, i) => (
           <p key={i}>{l}</p>
         ))}
-        {audit.uncheckedMetrics.length > 0 && <p>Not audited in this research: {audit.uncheckedMetrics.join(", ")}.</p>}
-        <p>{COVERAGE}</p>
-        {v2 && (
+        {v2 ? (
+          <p>
+            {`Checked: ${audit.checkedMetrics.join(", ").toLowerCase()}. Not audited: ${audit.uncheckedMetrics.length ? audit.uncheckedMetrics.join(", ").toLowerCase() : "other metrics"}, accounting-policy and footnote equivalence. Run after the answer above was written; the answer is not edited.`}
+          </p>
+        ) : (
           <>
-            <ReadinessLegend states={audit.findings.map((f) => f.readiness!)} />
-            <p>
-              {NOT_ASSESSED_ANYWHERE} &ldquo;{READINESS_LABEL.READY}&rdquo; means the checks performed found no issue, not that the companies&rsquo; accounting
-              policies are equivalent.
-            </p>
+            {audit.uncheckedMetrics.length > 0 && <p>Not audited in this research: {audit.uncheckedMetrics.join(", ")}.</p>}
+            <p>{COVERAGE}</p>
           </>
         )}
         {pairs.length > 0 && (

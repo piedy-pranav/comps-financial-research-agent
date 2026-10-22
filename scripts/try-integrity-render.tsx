@@ -38,19 +38,19 @@ const summary = summarize(plan, [audit]);
 
 const panel = renderToStaticMarkup(<ComparabilityCautions audit={summary} />);
 check("P1 V2 panel title and explanatory subtitle", panel.includes("Financial Comparison Integrity") && panel.includes("Checks whether financial figures are suitable for comparison based on reporting periods, source data, accounting concepts, and calculation consistency."));
-check(
-  "P1 summary: comparison not supported for OI and margin, with the missing evidence named",
-  panel.includes("Comparison not supported:</span> Operating income, Operating margin") && panel.includes("Operating income: NKE: no us-gaap OperatingIncomeLoss fact in SEC Company Facts for any year retrieved.") && panel.includes("Operating margin: NKE: no us-gaap OperatingIncomeLoss"),
-  panel,
-);
-check("P1 summary: revenue and net income reliable to compare", panel.includes("Reliable to compare:</span> Revenue, Net income, for the audited year."), panel);
-check("P1 READY revenue shown with INFO timing, not a caution", panel.includes(">Reliable to compare<") && panel.includes(">Info<"));
+const text = (html: string) => html.replace(/<span class="sr-only">.*?<\/span>/g, "").replace(/<[^>]+>/g, " ").replace(/&#x27;|&rsquo;/g, "'").replace(/\s+/g, " ");
+const pt = text(panel);
+check("P1 OI and margin grouped as one unsupported entry", /Insufficient evidence Operating income · Operating margin Comparison not supported\. The available evidence does not support/.test(pt), pt);
+check("P1 missing evidence named once (deduplicated across OI and margin)", pt.split("no us-gaap OperatingIncomeLoss fact").length - 1 === 1, pt);
+check("P1 next step and SEC link on the unsupported entry", pt.includes("Next step: Locate the figure in the 10-K itself") && panel.includes("SEC filing 1"));
+check("P1 revenue and net income grouped as reliable, with the INFO timing disclosure", /Reliable to compare Revenue · Net income Available checks support this comparison\. Unassessed accounting differences may still exist\. Fiscal years end 61 days apart/.test(pt), pt);
+check("P1 INFO shown with the info icon, not a check mark or caution", panel.includes('<span class="sr-only">Info, Fiscal period alignment: </span>'));
 check("P1 old wording gone", !/Do not rely|>Ready<|>Blocked<|>Review</.test(panel));
-check("P1 states the answer is not edited by the review", panel.includes("answer above was written before this review"));
-check("P1 legend explains the states shown, with tooltips on badges", panel.includes(READINESS_EXPLANATION.READY) && panel.includes(READINESS_EXPLANATION.BLOCKED) && !panel.includes(READINESS_EXPLANATION.REVIEW.slice(0, 40) + "</dd>") && panel.includes(`title="${READINESS_EXPLANATION.BLOCKED}"`));
-check("P1 accounting-policy limit kept", panel.includes("not that the companies") && panel.includes("accounting-policy and footnote equivalence"));
-check("P1 coverage disclosure for unassessed checks", panel.includes("Not assessed for any metric: accounting-policy and footnote equivalence."));
-check("P1 source basis shown", panel.includes("Source basis: NKE reported · UAA reported"));
+check("P1 states the answer is not edited by the review", pt.includes("Run after the answer above was written; the answer is not edited."));
+check("P1 badge tooltips carry the state explanations", panel.includes(`title="${READINESS_EXPLANATION.BLOCKED}"`) && panel.includes(`title="${READINESS_EXPLANATION.READY}"`));
+check("P1 coverage: checked metrics and accounting-policy limit stated", pt.includes("Checked: revenue, operating income, operating margin, net income. Not audited: growth rates, accounting-policy and footnote equivalence."), pt);
+check("P1 comparability status and source basis kept, in the disclosure", pt.includes("Operating margin: comparability insufficient evidence · NKE unavailable · UAA derived") && pt.includes("Revenue: comparability comparable · NKE reported · UAA reported"), pt);
+check("P1 crisper: under 260 words", pt.split(" ").filter(Boolean).length < 260, pt.split(" ").length);
 
 const legacySummary = toResearchAudit({ status: "partial", auditedPeriod: "FY2024", companies: ["NKE", "UAA"], periodDetails: [], checkedMetrics: ["Revenue"], uncheckedMetrics: [], limitations: [], findings: [{ pair: "NKE vs UAA", metricId: "revenue", metric: "Revenue", status: "PARTIALLY_COMPARABLE", explanation: "Fiscal years end 61 days apart.", evidenceUrls: ["https://www.sec.gov/x"] }] })!;
 const legacyPanel = renderToStaticMarkup(<ComparabilityCautions audit={legacySummary} />);
@@ -79,7 +79,32 @@ check("P4 pre-V2 audit object renders with legacy checks", legacyResult.includes
   for (const r of ["READY", "REVIEW", "BLOCKED"] as const) {
     check(`P5 ${r} -> "${READINESS_LABEL[r]}" with its explanation`, html.includes(`>${READINESS_LABEL[r]}<`) && html.includes(READINESS_EXPLANATION[r]));
   }
-  check("P5 caution summary line present", html.includes("Compare with caution:</span>"));
+  check("P5 caution entry lists its qualifying finding", /Compare with caution [^.]*Operating income[\s\S]*Fiscal years end 124 days apart/.test(text(html)), text(html));
+}
+
+// Multi-year: trend findings appear once, apart from the audited year, and not for already-unsupported metrics.
+{
+  const series = [2024, 2025, 2026];
+  const mk = (t: string, start: (y: number) => string, end: (y: number) => string, tag: (y: number) => string): CompanyData => {
+    const d = co(t, start(2026), end(2026), true);
+    d.metrics.revenue = series.map((y) => ({ ...row(y, start(y), end(y), 5e9, `${t}-ACC`, tag(y)) }));
+    d.metrics.net_income = series.map((y) => ({ ...row(y, start(y), end(y), 3e8, `${t}-ACC`, "NetIncomeLoss") }));
+    d.metrics.operating_income = [];
+    return d;
+  };
+  const a = mk("AAA", (y) => `${y - 1}-06-01`, (y) => `${y}-05-31`, () => "Revenues");
+  const b = mk("BBB", (y) => `${y - 1}-04-01`, (y) => `${y}-03-31`, (y) => (y < 2026 ? "Revenues" : "RevenueFromContractWithCustomerExcludingAssessedTax"));
+  b.metrics.revenue = b.metrics.revenue.filter((r) => r.fiscalYear !== 2025);
+  b.metrics.net_income = b.metrics.net_income.filter((r) => r.fiscalYear !== 2025);
+  const ma = buildAudit(a, b, 2026, { auditId: "y", now: new Date("2026-10-21T00:00:00Z"), series });
+  const s2 = summarize({ ...plan, tickers: ["AAA", "BBB"], multiYear: true, yearsInResearch: [2026, 2025, 2024] }, [ma]);
+  const t2 = text(renderToStaticMarkup(<ComparabilityCautions audit={s2} />));
+  const trendAt = t2.indexOf("Multi-year trend (separate from the audited year)");
+  check("T1 trend block present, after the audited-year entries", trendAt > t2.indexOf("Net income"), t2);
+  check("T1 series break explained once, in the trend block only", t2.split("FY2025 not in the annual series").length - 1 === 1 && t2.indexOf("FY2025 not in the annual series") > trendAt, t2);
+  check("T1 concept change kept in the trend block", t2.indexOf("then us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax") > trendAt);
+  check("T1 a finding for only some metrics names them", t2.includes("RevenueFromContractWithCustomerExcludingAssessedTax (FY2026). (Revenue)"), t2.slice(trendAt));
+  check("T1 unsupported metrics (operating income) not repeated in the trend block", !t2.slice(trendAt).includes("Operating income"), t2.slice(trendAt));
 }
 
 // Order and ownership: the complete answer first, its own review after it, once.
