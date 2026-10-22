@@ -10,8 +10,8 @@ Comps benchmarks a public company against its peers over several years. You ask 
 - **Streaming.** `/api/agent` streams NDJSON. The trace of tool calls appears live, then the answer prose, table rows, sources and follow-ups stream in as they are written.
 - **"Why?" questions.** Driver questions ("Why did Nike's margin fall?") use SEC data first, plus a news search tool (Tavily) whose text is treated as untrusted data.
 - **Threads and history.** Each question starts a thread, and follow-ups continue it with bounded context from earlier turns. `/history` lists past threads, and reopening one restores every turn.
-- **Comparability review.** An answer that compares two or more companies shows a deterministic review (no model call) for the newest fiscal year every company reports. It checks fiscal year-end alignment, currency and XBRL definitions, flags cautions, and links to the full audit. The review is saved with the run.
-- **Comparability Audit (`/audit`).** A standalone two-company check for revenue, operating income, operating margin and net income. Each metric gets one of `COMPARABLE`, `ADJUSTED`, `PARTIALLY_COMPARABLE`, `NOT_COMPARABLE` or `INSUFFICIENT_EVIDENCE`, with 10-K links, formulas, caveats, a review checklist and a Markdown export.
+- **Financial comparison integrity review.** An answer that compares two or more companies shows a deterministic review (no model call) for the newest fiscal year every company reports. Each metric gets a decision readiness (`READY`, `REVIEW`, `BLOCKED`) from explicit checks on source evidence, currency, fiscal period alignment and length, XBRL concept, formula and, for multi-year answers, each company's own annual series. The panel names the answer's comparisons to withhold or qualify, and links to the full audit. The review is saved with the run.
+- **Comparability Audit (`/audit`).** A standalone two-company check for revenue, operating income, operating margin and net income. Each metric gets one of `COMPARABLE`, `ADJUSTED`, `PARTIALLY_COMPARABLE`, `NOT_COMPARABLE` or `INSUFFICIENT_EVIDENCE`, plus a separate readiness with check-by-check findings, source basis (reported, derived, unavailable), coverage limits and a next step, with 10-K links, formulas, caveats, a review checklist and a Markdown export.
 - **Plans and usage.** Free: 3 successful questions in total. Pro: 25 per UTC day. A one-time $19 Pro upgrade runs through Stripe Checkout in **test mode** only.
 - **Guardrails.** At most 6 agent iterations (8 for "why" questions), a 90-second deadline, tool timeouts with one retry, and no invented metrics or years. Buy/sell/hold calls and price predictions are declined.
 
@@ -148,6 +148,8 @@ NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-usage.ts
 NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-stripe.ts
 NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-threads.ts
 NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-audit.ts
+NODE_OPTIONS=--conditions=react-server npx tsx scripts/try-integrity.ts
+npx tsx scripts/try-integrity-render.tsx
 ```
 
 Live checks (real keys, network and model spend):
@@ -166,7 +168,7 @@ The full gate order and what "done" means are in [eval/README.md](eval/README.md
 
 ## Known limitations
 
-- Comparability results are an evidence-backed review, not a statutory audit. They cover annual 10-K US GAAP facts in USD only (no FX conversion, non-GAAP, segments or IFRS filers). Periods are matched to the nearest fiscal year-end, not recalendarized. Companies with no operating income line (for example Nike) get `INSUFFICIENT_EVIDENCE` rather than an estimate.
+- Comparability results are an evidence-backed review, not a statutory audit. They cover annual 10-K US GAAP facts in USD only (no FX conversion, non-GAAP, segments or IFRS filers). Periods are matched to the nearest fiscal year-end, not recalendarized. Companies with no operating income fact in SEC Company Facts (for example Nike) get `INSUFFICIENT_EVIDENCE` rather than an estimate. Readiness covers only the listed checks: accounting-policy equivalence and revisions/restatements are not assessed, and the research answer text is not rewritten by the review.
 - The SEC data cache and the audit rate limit (10 per user per hour) are in memory, so they reset on every deploy or restart and aren't shared across replicas.
 - Research answers don't count clarifications, declines or errors as usage. Audits never count against research questions.
 
