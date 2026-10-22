@@ -794,3 +794,13 @@ Scope: components 2 and 3 of the conversation-UX pass. Component 1 (progressive 
 **Tests**: WCAG contrast of white text on each fill, computed from the `app/globals.css` tokens: positive `#2f6b47` 6.33:1, negative `#a23b3b` 6.51:1, warning `#8a5b0e` 5.86:1, accent `#305444` 8.48:1, muted `#5d6b61` 5.61:1. All pass AA (4.5:1), and the code comment's "at least 5.6:1" holds. `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeds. No frontend test suite exists, and no eval cases apply (no agent change).
 
 **Not verified**: no browser visual pass of `/audit` with real results (badge sizing, legibility next to the caveat text, mobile width).
+
+### A24. README rewrite with current project context (2026-10-21, branch `pranav-dev`, not merged)
+
+**What**: documentation only. `README.md` brought up to date with what is built on `pranav-dev`. Its feature summary covers cited research answers, NDJSON streaming, "why" questions, threads and history, the comparability review inside research answers, the `/audit` page, plans and usage, and guardrails. It also adds a request-flow diagram, the repo structure, local setup that now includes migration 002 and the Supabase redirect URL, local Stripe CLI testing, an env var table with required/optional status, the offline and live test commands, a deployment summary pointing to `docs/DEPLOY_GUIDE.md`, known limitations, the team table (adding deployment ownership), and a docs index in `CLAUDE.md` read order. Removed the stale "stub files" sentence: the files it named are implemented. `LLM_MODEL` is now described as defaulting to `claude-haiku-5-5` (the most-verified model), with `claude-sonnet-5-5` as an option, following the team's decision to stay on Haiku for deployment.
+
+**Also fixed**: `docs/DEPLOY_GUIDE.md` section 7 named a nonexistent tool `lookup_company`; the code's tool is `lookup_ticker`.
+
+**Checked**: stream event names against `lib/agent/runStream.ts`, and tool names against `lib/agent/tools/`. Every relative link in the README resolves to an existing file, and every script it names exists. The test commands match the ones run in A22.
+
+**Not changed (follow-up)**: `docs/DEPLOY_GUIDE.md` (sections 4.1 and 4.2) and `.env.example` still suggest `LLM_MODEL=claude-sonnet-5-5` for the demo. Update them if Haiku is the final production choice.
