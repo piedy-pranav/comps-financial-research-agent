@@ -99,14 +99,14 @@ function IntegrityGroup({ items, multiPair }: { items: ResearchAuditFinding[]; m
       </p>
       <CheckLines lines={currentLines(f)} />
       {readiness !== "READY" && (f.analystAction || urls.length > 0) && (
-        <p className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs leading-5 text-ink-3">
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-xs leading-5 text-ink-3">
           {f.analystAction && (
             <span>
               <span className="font-medium text-ink-2">Next step:</span> {f.analystAction}
             </span>
           )}
           <EvidenceLinks urls={urls} />
-        </p>
+        </div>
       )}
       <details className="group mt-0.5">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-ink-4 transition-colors hover:text-ink-2">

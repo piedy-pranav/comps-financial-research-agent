@@ -13,6 +13,7 @@ import { parsePersistedRun } from "../lib/history-parse";
 import { toResearchAudit, type ComparabilityAudit } from "../lib/audit/types";
 
 let failures = 0;
+const rendered: Record<string, string> = {};
 function check(name: string, ok: boolean, detail?: unknown) {
   if (!ok) failures++;
   console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${String(detail).slice(0, 500)}`}`);
@@ -37,6 +38,7 @@ const plan: ResearchAuditPlan = { tickers: ["NKE", "UAA"], metrics: ["revenue", 
 const summary = summarize(plan, [audit]);
 
 const panel = renderToStaticMarkup(<ComparabilityCautions audit={summary} />);
+rendered["V2 panel (blocked + ready)"] = panel;
 check("P1 V2 panel title and explanatory subtitle", panel.includes("Financial Comparison Integrity") && panel.includes("Checks whether financial figures are suitable for comparison based on reporting periods, source data, accounting concepts, and calculation consistency."));
 const text = (html: string) => html.replace(/<span class="sr-only">.*?<\/span>/g, "").replace(/<[^>]+>/g, " ").replace(/&#x27;|&rsquo;/g, "'").replace(/\s+/g, " ");
 const pt = text(panel);
@@ -54,9 +56,11 @@ check("P1 crisper: under 260 words", pt.split(" ").filter(Boolean).length < 260,
 
 const legacySummary = toResearchAudit({ status: "partial", auditedPeriod: "FY2024", companies: ["NKE", "UAA"], periodDetails: [], checkedMetrics: ["Revenue"], uncheckedMetrics: [], limitations: [], findings: [{ pair: "NKE vs UAA", metricId: "revenue", metric: "Revenue", status: "PARTIALLY_COMPARABLE", explanation: "Fiscal years end 61 days apart.", evidenceUrls: ["https://www.sec.gov/x"] }] })!;
 const legacyPanel = renderToStaticMarkup(<ComparabilityCautions audit={legacySummary} />);
+rendered["legacy panel"] = legacyPanel;
 check("P2 saved pre-V2 summary renders the earlier view", legacyPanel.includes("Comparability cautions") && legacyPanel.includes("Partially comparable") && !legacyPanel.includes("Readiness") && !legacyPanel.includes("Do not rely"));
 
 const result = renderToStaticMarkup(<AuditResult audit={audit} />);
+rendered["/audit result"] = result;
 check("P3 /audit shows the integrity title, subtitle and labeled verdict", result.includes("Financial Comparison Integrity") && result.includes("calculation consistency") && result.includes("Insufficient evidence: operating income, operating margin."), result.slice(0, 300));
 check("P3 blocked metric: comparison not supported, with the state explanation", result.includes("Comparison not supported.") && result.includes(READINESS_EXPLANATION.BLOCKED));
 check("P3 old wording gone from /audit", !/Decision readiness|Conclusion withheld|>Ready<|>Blocked</.test(result));
@@ -67,6 +71,7 @@ const legacy = JSON.parse(JSON.stringify(audit)) as ComparabilityAudit;
 delete legacy.integrity;
 for (const m of legacy.metrics) delete m.integrity;
 const legacyResult = renderToStaticMarkup(<AuditResult audit={legacy} />);
+rendered["legacy /audit result"] = legacyResult;
 check("P4 pre-V2 audit object renders with legacy checks", legacyResult.includes("Metric review") && !legacyResult.includes("Financial Comparison Integrity") && legacyResult.includes("currency:"));
 
 // All three states with labels and explanations, mixed in one panel.
@@ -74,6 +79,7 @@ check("P4 pre-V2 audit object renders with legacy checks", legacyResult.includes
   const lulu = buildAudit(co("NKE", "2023-06-01", "2024-05-31", true), co("LULU", "2023-01-30", "2024-01-28", true), 2026, { auditId: "m", now: new Date("2026-10-21T00:00:00Z") });
   const mixed = summarize({ ...plan, tickers: ["NKE", "LULU"] }, [lulu, audit]);
   const html = renderToStaticMarkup(<ComparabilityCautions audit={mixed} />);
+  rendered["mixed panel (all three states)"] = html;
   const states = new Set(mixed.findings.map((f) => f.readiness));
   check("P5 mixed fixture has all three internal states", states.size === 3, [...states]);
   for (const r of ["READY", "REVIEW", "BLOCKED"] as const) {
@@ -98,7 +104,8 @@ check("P4 pre-V2 audit object renders with legacy checks", legacyResult.includes
   b.metrics.net_income = b.metrics.net_income.filter((r) => r.fiscalYear !== 2025);
   const ma = buildAudit(a, b, 2026, { auditId: "y", now: new Date("2026-10-21T00:00:00Z"), series });
   const s2 = summarize({ ...plan, tickers: ["AAA", "BBB"], multiYear: true, yearsInResearch: [2026, 2025, 2024] }, [ma]);
-  const t2 = text(renderToStaticMarkup(<ComparabilityCautions audit={s2} />));
+  rendered["multi-year panel"] = renderToStaticMarkup(<ComparabilityCautions audit={s2} />);
+  const t2 = text(rendered["multi-year panel"]);
   const trendAt = t2.indexOf("Multi-year trend (separate from the audited year)");
   check("T1 trend block present, after the audited-year entries", trendAt > t2.indexOf("Net income"), t2);
   check("T1 series break explained once, in the trend block only", t2.split("FY2025 not in the annual series").length - 1 === 1 && t2.indexOf("FY2025 not in the annual series") > trendAt, t2);
@@ -124,6 +131,7 @@ const order = (html: string, ...needles: string[]) => needles.map((n) => html.in
 const asc = (xs: number[]) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
 {
   const html = renderToStaticMarkup(<TurnResult result={answerResult} audit={summary} onAsk={() => {}} />);
+  rendered["answer + panel"] = html;
   const pos = order(html, "Nike is larger by revenue", "Revenue table", "https://www.sec.gov/a", "What about margins?", "Financial Comparison Integrity");
   check("O1 prose, table, citations and follow-ups all render before the integrity panel", asc(pos), pos);
   check("O1 exactly one panel", html.split('aria-label="Financial comparison integrity"').length - 1 === 1);
@@ -166,6 +174,25 @@ const asc = (xs: number[]) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i 
 {
   const single: AgentResult = { ...answerResult, trace: [{ type: "action", iteration: 1, id: "t1", tool: "get_financials", label: "", input: { thought: "", ticker: "NKE", metrics: ["revenue"], years: 5 } }, { type: "observation", iteration: 1, id: "t1", tool: "get_financials", ok: true, summary: "" }] };
   check("O7 single-company research is not audited (no panel)", planResearchAudit(single) === null);
+}
+
+// Invalid nesting (a block element inside <p>) is a React hydration error in the browser; catch it here.
+function blockInsideP(html: string): string | null {
+  const BLOCK = /^(div|ul|ol|li|dl|section|details|table|h[1-6]|p|aside|header|footer|article)$/;
+  let depth = 0;
+  for (const m of html.matchAll(/<(\/?)([a-z0-9]+)[^>]*?(\/?)>/g)) {
+    const [, close, tag, selfClose] = m;
+    if (tag === "p") {
+      if (close) depth = Math.max(0, depth - 1);
+      else if (depth > 0) return `<p> inside <p> near ${m.index}`;
+      else if (!selfClose) depth++;
+    } else if (!close && depth > 0 && BLOCK.test(tag)) return `<${tag}> inside <p>: ${html.slice(Math.max(0, m.index! - 120), m.index! + 40)}`;
+  }
+  return null;
+}
+for (const [name, html] of Object.entries(rendered)) {
+  const bad = blockInsideP(html);
+  check(`N1 valid nesting: ${name}`, bad === null, bad);
 }
 
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
