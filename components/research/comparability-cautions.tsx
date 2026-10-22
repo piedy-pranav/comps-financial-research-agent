@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge } from "@/components/audit/integrity-badges";
 import { AlertIcon, ArrowUpRightIcon, CheckIcon, InfoIcon } from "@/components/ui/icons";
-import { STATUS_LABEL } from "@/lib/audit/report";
-import type { ResearchAuditFinding, ResearchAuditSummary } from "@/lib/audit/types";
+import { BASIS_LABEL, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
+import type { Readiness, ResearchAuditFinding, ResearchAuditSummary } from "@/lib/audit/types";
 
 const COVERAGE =
-  "Comparability checks cover revenue, operating income, operating margin and net income where sufficient evidence is available. Other metrics in this research have not been audited.";
+  "Integrity checks cover revenue, operating income, operating margin and net income where sufficient evidence is available. Other metrics in this research have not been audited.";
+const NOT_ASSESSED_ANYWHERE = "Not assessed for any metric: accounting-policy and footnote equivalence, revisions and restatements.";
 
 const STATUS_TEXT: Record<ResearchAuditFinding["status"], string> = {
   COMPARABLE: "text-pos",
@@ -14,24 +16,136 @@ const STATUS_TEXT: Record<ResearchAuditFinding["status"], string> = {
   INSUFFICIENT_EVIDENCE: "text-ink-3",
 };
 
+const ORDER: Record<Readiness, number> = { BLOCKED: 0, REVIEW: 1, READY: 2 };
+
 function auditHref(pair: string, period: string) {
   const [a, b] = pair.split(" vs ");
   const p = /^FY(\d{4})$/.exec(period)?.[1] ?? "latest";
   return `/audit?a=${encodeURIComponent(a ?? "")}&b=${encodeURIComponent(b ?? "")}&period=${p}`;
 }
 
-// Deterministic comparability review shown above a research answer. Explains, never changes, the answer below it.
+function EvidenceLinks({ urls }: { urls: string[] }) {
+  if (!urls.length) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+      {urls.map((u, j) => (
+        <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-xs text-ink-3 transition-colors hover:text-ink">
+          SEC filing {j + 1}
+          <ArrowUpRightIcon size={11} />
+          <span className="sr-only">(opens in a new tab)</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+// "Operating income, Operating margin (NKE vs UAA)" for the safeguard lines.
+function metricList(findings: ResearchAuditFinding[], multiPair: boolean) {
+  return findings.map((f) => (multiPair ? `${f.metric} (${f.pair})` : f.metric)).join(", ");
+}
+
+// V2: one audited conclusion (metric x pair) with its readiness, what limits it and what to do next.
+function IntegrityFinding({ f, multiPair }: { f: ResearchAuditFinding; multiPair: boolean }) {
+  // Fixed coverage limits are stated once in the footer, not repeated per metric. A blocked metric lists only what
+  // blocks or qualifies it; checks skipped because a value is missing are in the detailed audit.
+  const flagged = (f.checks ?? []).filter(
+    (c) => c.id !== "revisions" && c.id !== "accounting_policy" && (f.readiness !== "BLOCKED" || c.status === "FAIL" || c.status === "CAUTION"),
+  );
+  const basis = Object.entries(f.sourceBasis ?? {});
+  return (
+    <li className="flex items-start gap-2.5">
+      <ReadinessBadge readiness={f.readiness!} size="sm" />
+      <div className="min-w-0 flex-1 text-[13px] leading-5">
+        <div>
+          <span className="font-medium text-ink">{f.metric}</span>
+          {multiPair && <span className="text-ink-4"> · {f.pair}</span>}
+          <span className={`ml-2 text-xs ${STATUS_TEXT[f.status]}`}>Comparability: {STATUS_LABEL[f.status]}</span>
+        </div>
+        {f.conclusion && <p className="mt-0.5 text-ink-2">{f.conclusion}</p>}
+        {flagged.length > 0 && (
+          <ul className="mt-1.5 space-y-1">
+            {flagged.map((c, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-xs leading-5 text-ink-2">
+                <CheckStatusIcon status={c.status} />
+                <span className="min-w-0 [overflow-wrap:anywhere]">
+                  <CheckStatusLabel status={c.status} /> <span className="text-ink-3">{c.title}{c.ticker ? ` (${c.ticker})` : ""}:</span> {c.finding}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {f.trend && (
+          <p className="mt-1 text-xs leading-5 text-ink-3">
+            Multi-year trend: <span className="font-medium text-ink-2">{READINESS_LABEL[f.trend.readiness]}</span>
+            {f.trend.readiness !== "READY" ? ` · ${f.trend.summary}` : ""}
+          </p>
+        )}
+        <p className="mt-1 text-xs leading-5 text-ink-3">
+          {basis.length > 0 && <>Source basis: {basis.map(([t, b]) => `${t} ${BASIS_LABEL[b].toLowerCase()}`).join(" · ")}. </>}
+          {f.readiness !== "READY" && f.analystAction && <>Next step: {f.analystAction}</>}
+        </p>
+        {f.readiness !== "READY" && <EvidenceLinks urls={f.evidenceUrls} />}
+      </div>
+    </li>
+  );
+}
+
+function LegacyFindings({ audit, multiPair }: { audit: ResearchAuditSummary; multiPair: boolean }) {
+  const issues = audit.findings.filter((f) => f.status !== "COMPARABLE");
+  const ok = audit.findings.filter((f) => f.status === "COMPARABLE");
+  return (
+    <>
+      {issues.length > 0 ? (
+        <ul className="mt-3 space-y-3">
+          {issues.map((f, i) => (
+            <li key={i} className="flex items-start gap-2.5">
+              <AlertIcon size={14} className={`mt-1 shrink-0 ${STATUS_TEXT[f.status]}`} />
+              <div className="min-w-0 text-[13px] leading-5">
+                <div>
+                  <span className="font-medium text-ink">{f.metric}</span>
+                  {multiPair && <span className="text-ink-4"> · {f.pair}</span>}
+                  <span className={`ml-2 text-xs ${STATUS_TEXT[f.status]}`}>{STATUS_LABEL[f.status]}</span>
+                </div>
+                <p className="mt-0.5 text-ink-2">{f.explanation}</p>
+                <EvidenceLinks urls={f.evidenceUrls} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-2">
+          <CheckIcon size={14} className="mt-0.5 shrink-0 text-pos" />
+          {audit.checkedMetrics.length} supported metric{audit.checkedMetrics.length === 1 ? "" : "s"} checked; no material issues identified for the audited period.
+        </p>
+      )}
+      {issues.length > 0 && ok.length > 0 && (
+        <p className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-ink-3">
+          <CheckIcon size={14} className="mt-0.5 shrink-0 text-pos" />
+          Checked, no issues: {ok.map((f) => (multiPair ? `${f.metric} (${f.pair})` : f.metric)).join(", ")}.
+        </p>
+      )}
+    </>
+  );
+}
+
+// Deterministic integrity review shown above a research answer. The answer was generated (and streamed) before this
+// review ran and is never edited by it, so the review states which of the answer's comparisons to withhold or
+// qualify. Summaries saved before V2 have no readiness and render the earlier comparability view.
 export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }) {
   const pairs = [...new Set(audit.findings.map((f) => f.pair))];
   const multiPair = pairs.length > 1;
-  const issues = audit.findings.filter((f) => f.status !== "COMPARABLE");
-  const ok = audit.findings.filter((f) => f.status === "COMPARABLE");
+  const v2 = audit.findings.length > 0 && audit.findings.every((f) => f.readiness);
+  const sorted = [...audit.findings].sort((a, b) => ORDER[a.readiness ?? "READY"] - ORDER[b.readiness ?? "READY"]);
+  const blocked = sorted.filter((f) => f.readiness === "BLOCKED");
+  const review = sorted.filter((f) => f.readiness === "REVIEW");
+  const trendBlocked = sorted.filter((f) => f.readiness !== "BLOCKED" && f.trend && f.trend.readiness === "BLOCKED");
+  const legacyIssues = audit.findings.some((f) => f.status !== "COMPARABLE");
 
   return (
-    <section aria-label="Comparability review" className="mt-8 rounded-md border border-line-subtle bg-raised px-4 py-4 sm:px-5">
+    <section aria-label="Financial comparison integrity" className="mt-8 rounded-md border border-line-subtle bg-raised px-4 py-4 sm:px-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-[11px] font-medium uppercase tracking-wider text-ink-3">
-          {issues.length ? "Comparability cautions" : "Comparability review"}
+          {v2 ? "Financial comparison integrity" : legacyIssues ? "Comparability cautions" : "Comparability review"}
         </h2>
         <span className="text-xs text-ink-4">Audited period: {audit.auditedPeriod}</span>
       </div>
@@ -39,61 +153,46 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
       {audit.status === "unavailable" ? (
         <p className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-2">
           <InfoIcon size={14} className="mt-0.5 shrink-0 text-ink-3" />
-          Comparability review unavailable. The financial research below remains available, but its cross-company comparability has not been
+          Comparison integrity review unavailable. The financial research below remains available, but its cross-company comparability has not been
           independently checked by the audit engine.
         </p>
       ) : (
         <>
-          {audit.periodDetails.length > 0 && (
-            <p className="mt-1 text-xs leading-5 text-ink-4 [overflow-wrap:anywhere]">{audit.periodDetails.join(" · ")}</p>
-          )}
+          {audit.periodDetails.length > 0 && <p className="mt-1 text-xs leading-5 text-ink-4 [overflow-wrap:anywhere]">{audit.periodDetails.join(" · ")}</p>}
 
-          {issues.length > 0 ? (
-            <ul className="mt-3 space-y-3">
-              {issues.map((f, i) => (
-                <li key={i} className="flex items-start gap-2.5">
-                  <AlertIcon size={14} className={`mt-1 shrink-0 ${STATUS_TEXT[f.status]}`} />
-                  <div className="min-w-0 text-[13px] leading-5">
-                    <div>
-                      <span className="font-medium text-ink">{f.metric}</span>
-                      {multiPair && <span className="text-ink-4"> · {f.pair}</span>}
-                      <span className={`ml-2 text-xs ${STATUS_TEXT[f.status]}`}>{STATUS_LABEL[f.status]}</span>
-                    </div>
-                    <p className="mt-0.5 text-ink-2">{f.explanation}</p>
-                    {f.evidenceUrls.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                        {f.evidenceUrls.map((u, j) => (
-                          <a
-                            key={u}
-                            href={u}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-0.5 text-xs text-ink-3 transition-colors hover:text-ink"
-                          >
-                            SEC filing {j + 1}
-                            <ArrowUpRightIcon size={11} />
-                            <span className="sr-only">(opens in a new tab)</span>
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+          {v2 ? (
+            <>
+              {(blocked.length > 0 || review.length > 0 || trendBlocked.length > 0) && (
+                <div role="note" className="mt-3 space-y-1 rounded-md border border-line bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
+                  <p className="text-xs text-ink-3">The answer below was written before this review and is not edited by it.</p>
+                  {blocked.length > 0 && (
+                    <p>
+                      <span className="font-medium text-neg">Do not rely on</span> its comparison of {metricList(blocked, multiPair)}: the evidence does not support
+                      which company is higher or stronger. The sourced values themselves remain usable.
+                    </p>
+                  )}
+                  {review.length > 0 && (
+                    <p>
+                      <span className="font-medium text-warn">Treat as provisional</span> its comparison of {metricList(review, multiPair)}, with the qualifications
+                      listed.
+                    </p>
+                  )}
+                  {trendBlocked.length > 0 && (
+                    <p>
+                      <span className="font-medium text-neg">Growth across a break in the annual series is not supported</span> for{" "}
+                      {metricList(trendBlocked, multiPair)} (see below). Years on either side of the break remain usable.
+                    </p>
+                  )}
+                </div>
+              )}
+              <ul className="mt-3 space-y-3">
+                {sorted.map((f, i) => (
+                  <IntegrityFinding key={i} f={f} multiPair={multiPair} />
+                ))}
+              </ul>
+            </>
           ) : (
-            <p className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-2">
-              <CheckIcon size={14} className="mt-0.5 shrink-0 text-pos" />
-              {audit.checkedMetrics.length} supported metric{audit.checkedMetrics.length === 1 ? "" : "s"} checked; no material issues identified for the audited
-              period.
-            </p>
-          )}
-
-          {issues.length > 0 && ok.length > 0 && (
-            <p className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-ink-3">
-              <CheckIcon size={14} className="mt-0.5 shrink-0 text-pos" />
-              Checked, no issues: {ok.map((f) => (multiPair ? `${f.metric} (${f.pair})` : f.metric)).join(", ")}.
-            </p>
+            <LegacyFindings audit={audit} multiPair={multiPair} />
           )}
         </>
       )}
@@ -104,6 +203,7 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
         ))}
         {audit.uncheckedMetrics.length > 0 && <p>Not audited in this research: {audit.uncheckedMetrics.join(", ")}.</p>}
         <p>{COVERAGE}</p>
+        {v2 && <p>{NOT_ASSESSED_ANYWHERE} Ready means the listed checks found no issue, not that the companies are economically equivalent.</p>}
         {pairs.length > 0 && (
           <p className="flex flex-wrap gap-x-3">
             {pairs.map((p) => (
