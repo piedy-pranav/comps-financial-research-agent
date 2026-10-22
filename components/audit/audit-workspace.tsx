@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
-import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge } from "@/components/audit/integrity-badges";
+import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge, ReadinessLegend } from "@/components/audit/integrity-badges";
 import { StatePanel } from "@/components/research/state-panel";
 import { AlertIcon, ArrowUpRightIcon, CheckIcon, ChevronRightIcon, SpinnerIcon, XIcon } from "@/components/ui/icons";
-import { auditToMarkdown, BASIS_LABEL, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
+import { auditToMarkdown, BASIS_LABEL, INTEGRITY_SUBTITLE, INTEGRITY_TITLE, READINESS_EXPLANATION, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
 import type { ComparabilityAudit, ComparabilityStatus, IntegrityCheck, MetricAudit, MetricIntegrity } from "@/lib/audit/types";
 
 // Solid fills so the outcome reads at a glance; white text is at least 5.6:1 on each fill.
@@ -87,9 +87,12 @@ function IntegrityPanel({ g }: { g: MetricIntegrity }) {
       <div
         className={`mt-3 rounded-md border px-3 py-2 text-[14px] leading-6 ${g.readiness === "BLOCKED" ? "border-neg/40 bg-canvas text-ink-2" : "border-line-subtle bg-canvas text-ink-2"}`}
       >
+        <p className="text-[13px] text-ink-3">
+          <span className="font-medium text-ink-2">{READINESS_LABEL[g.readiness]}.</span> {READINESS_EXPLANATION[g.readiness]}
+        </p>
         {g.withheldConclusionReason ? (
           <>
-            <span className="font-medium text-neg">Conclusion withheld.</span> {g.withheldConclusionReason}
+            <span className="font-medium text-neg">Comparison not supported.</span> {g.withheldConclusionReason}
           </>
         ) : (
           g.allowableConclusion
@@ -99,7 +102,8 @@ function IntegrityPanel({ g }: { g: MetricIntegrity }) {
         </p>
         {g.trend && (
           <p className="mt-1 text-[13px] text-ink-3">
-            <span className="font-medium text-ink-2">Multi-year trend: {READINESS_LABEL[g.trend.readiness]}.</span> {g.trend.summary}
+            <span className="font-medium text-ink-2">Multi-year trend (separate from the audited year): {READINESS_LABEL[g.trend.readiness]}.</span>{" "}
+            {g.trend.summary}
           </p>
         )}
       </div>
@@ -287,8 +291,12 @@ export function AuditResult({ audit }: { audit: ComparabilityAudit }) {
         <p className="mt-4 text-[15px] leading-6 text-ink-2">{audit.overallAssessment}</p>
         {audit.integrity && (
           <div className="mt-3 rounded-md border border-line-subtle bg-canvas px-3 py-2 text-[14px] leading-6 text-ink-2">
-            <span className="mr-1 text-[11px] font-medium uppercase tracking-wider text-ink-3">Decision readiness</span>
-            {audit.integrity.verdict}
+            <span className="block text-[11px] font-medium uppercase tracking-wider text-ink-3">{INTEGRITY_TITLE}</span>
+            <span className="block text-xs text-ink-3">{INTEGRITY_SUBTITLE}</span>
+            <span className="mt-1 block">{audit.integrity.verdict}</span>
+            <div className="mt-2">
+              <ReadinessLegend states={audit.metrics.flatMap((m) => (m.integrity ? [m.integrity.readiness] : []))} />
+            </div>
             <ul className="mt-1 list-disc pl-5 text-xs leading-5 text-ink-3">
               {audit.integrity.coverage.map((c, i) => (
                 <li key={i}>{c}</li>

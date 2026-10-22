@@ -21,6 +21,7 @@ import {
   type PriorReport,
   type ShortPeriod,
 } from "./integrity";
+import { READINESS_LABEL } from "./report";
 import type {
   AuditAdjustment,
   AuditCheck,
@@ -547,7 +548,6 @@ const LIMITATIONS = [
   "Missing figures mean missing from SEC Company Facts (structured XBRL data), not necessarily absent from the filing.",
 ];
 
-const READINESS_WORD: Record<Readiness, string> = { READY: "ready", REVIEW: "need review", BLOCKED: "blocked" };
 
 export function buildAudit(
   a: CompanyData,
@@ -586,11 +586,12 @@ export function buildAudit(
   if (b.error) limitations.unshift(`${tb}: ${b.error}`);
 
   const byReadiness = (r: Readiness) => metrics.filter((m) => m.integrity?.readiness === r);
+  // Display text only (the readiness values themselves are in readinessByMetric), worded with the shared labels.
   const verdict =
     (["READY", "REVIEW", "BLOCKED"] as Readiness[])
       .filter((r) => byReadiness(r).length)
-      .map((r) => `${byReadiness(r).length} ${READINESS_WORD[r]} (${byReadiness(r).map((m) => m.label.toLowerCase()).join(", ")})`)
-      .join("; ") + ". Readiness covers only the checks listed; accounting-policy equivalence is not assessed.";
+      .map((r) => `${READINESS_LABEL[r]}: ${byReadiness(r).map((m) => m.label.toLowerCase()).join(", ")}.`)
+      .join(" ") + " Based only on the checks listed; accounting-policy equivalence is not assessed.";
 
   const actions = metrics
     .filter((m) => m.integrity && m.integrity.readiness !== "READY")

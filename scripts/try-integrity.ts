@@ -221,7 +221,7 @@ async function main() {
     const md = auditToMarkdown(legacy);
     check("V14 legacy export works, no V2 section", md.includes("# Comparability audit") && !md.includes("Readiness"));
     const v2md = auditToMarkdown(a);
-    check("V14 V2 export adds readiness, checks and coverage", v2md.includes("Readiness: Ready") && v2md.includes("[INFO]") === false && v2md.includes("[PASS] Source evidence") && v2md.includes("Not assessed: Revisions and restatements"), v2md.slice(0, 400));
+    check("V14 V2 export adds readiness, checks and coverage", v2md.includes("Readiness: Reliable to compare.") && v2md.includes("**Insufficient evidence**: The available evidence does not support") && v2md.includes("[INFO]") === false && v2md.includes("[PASS] Source evidence") && v2md.includes("Not assessed: Revisions and restatements"), v2md.slice(0, 400));
     const old = toResearchAudit({ status: "completed", auditedPeriod: "FY2025", findings: [{ pair: "A vs B", metricId: "revenue", metric: "Revenue", status: "COMPARABLE", explanation: "x", evidenceUrls: [] }] });
     check("V14 legacy research finding parses without V2 fields", !!old && old.findings[0].readiness === undefined && old.findings[0].checks === undefined);
     const damaged = toResearchAudit({ status: "completed", auditedPeriod: "FY2025", findings: [{ pair: "A vs B", metricId: "revenue", metric: "Revenue", status: "COMPARABLE", explanation: "x", evidenceUrls: [], readiness: "GREAT", checks: [{}] }] });
@@ -327,7 +327,14 @@ async function main() {
     check("RV1 trend summarized for multi-year research", rev.trend?.readiness === "READY" && oi.trend?.readiness === "BLOCKED");
     check("RV1 summary round-trips through the tolerant reader", JSON.stringify(toResearchAudit(JSON.parse(JSON.stringify(s)))?.findings) === JSON.stringify(s.findings));
     check("RV1 limitation says series was checked but growth math was not", s.limitations.some((l) => l.includes("only FY2026 was audited") && l.includes("growth-rate calculations themselves were not re-verified")));
-    check("RV1 audit-level verdict counts readiness per metric", /2 ready \(revenue, net income\)/.test(audit.integrity!.verdict) && /blocked \(operating income, operating margin\)/.test(audit.integrity!.verdict), audit.integrity?.verdict);
+    check("RV1 audit-level verdict uses the shared display labels", audit.integrity!.verdict.startsWith("Reliable to compare: revenue, net income. Insufficient evidence: operating income, operating margin."), audit.integrity?.verdict);
+    const serialized = [...JSON.stringify(s).matchAll(/"readiness":"([^"]+)"/g)].map((m) => m[1]);
+    check(
+      "RV1 internal readiness enum unchanged in data and serialization (labels are display-only)",
+      JSON.stringify(audit.integrity!.readinessByMetric) === JSON.stringify({ revenue: "READY", operating_income: "BLOCKED", operating_margin: "BLOCKED", net_income: "READY" }) &&
+        serialized.length > 0 && serialized.every((r) => ["READY", "REVIEW", "BLOCKED"].includes(r)),
+      serialized,
+    );
     check("RV1 analyst actions added to the checklist", audit.reviewChecklist.some((c) => c.startsWith("Operating income: Locate the figure")));
   }
 

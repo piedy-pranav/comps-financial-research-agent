@@ -9,7 +9,23 @@ export const STATUS_LABEL: Record<ComparabilityStatus, string> = {
   INSUFFICIENT_EVIDENCE: "Insufficient evidence",
 };
 
-export const READINESS_LABEL: Record<Readiness, string> = { READY: "Ready", REVIEW: "Review", BLOCKED: "Blocked" };
+// The one place readiness is worded for people. Internal values (READY / REVIEW / BLOCKED) stay in data and logic.
+// Client-safe: this module imports types only.
+export const READINESS_LABEL: Record<Readiness, string> = {
+  READY: "Reliable to compare",
+  REVIEW: "Compare with caution",
+  BLOCKED: "Insufficient evidence",
+};
+
+export const READINESS_EXPLANATION: Record<Readiness, string> = {
+  READY: "Available checks support this comparison. Unassessed accounting differences may still exist.",
+  REVIEW: "The comparison has differences or uncertainties that should be reviewed before drawing conclusions.",
+  BLOCKED: "The available evidence does not support a reliable comparison. Do not use it to conclude which company performs better.",
+};
+
+export const INTEGRITY_TITLE = "Financial Comparison Integrity";
+export const INTEGRITY_SUBTITLE =
+  "Checks whether financial figures are suitable for comparison based on reporting periods, source data, accounting concepts, and calculation consistency.";
 
 export const CHECK_LABEL: Record<CheckStatus, string> = {
   PASS: "Pass",
@@ -35,7 +51,11 @@ export function auditToMarkdown(a: ComparabilityAudit, checked: boolean[] = []):
     `**Overall: ${STATUS_LABEL[a.overallStatus]}.** ${a.overallAssessment}`,
     "",
   ];
-  if (a.integrity) lines.push(`**Readiness (financial comparison integrity):** ${a.integrity.verdict}`, "", ...a.integrity.coverage.map((c) => `- ${c}`), "");
+  if (a.integrity) {
+    lines.push(`**${INTEGRITY_TITLE}:** ${a.integrity.verdict}`, "", `_${INTEGRITY_SUBTITLE}_`, "");
+    for (const r of ["READY", "REVIEW", "BLOCKED"] as Readiness[]) lines.push(`- **${READINESS_LABEL[r]}**: ${READINESS_EXPLANATION[r]}`);
+    lines.push("", ...a.integrity.coverage.map((c) => `- ${c}`), "");
+  }
   if (a.aiInterpretation) lines.push(`> AI interpretation (grounded in the findings below, does not change them): ${a.aiInterpretation}`, "");
 
   const v2 = a.metrics.some((m) => m.integrity);
@@ -53,9 +73,9 @@ export function auditToMarkdown(a: ComparabilityAudit, checked: boolean[] = []):
     lines.push(`## ${m.label}: ${STATUS_LABEL[m.status]}`, "", `_Definition:_ ${m.definition}`, "", m.explanation, "");
     const g = m.integrity;
     if (g) {
-      lines.push(`Readiness: ${READINESS_LABEL[g.readiness]}. ${g.withheldConclusionReason ? `Conclusion withheld: ${g.withheldConclusionReason}` : g.allowableConclusion}`, "");
+      lines.push(`Readiness: ${READINESS_LABEL[g.readiness]}. ${g.withheldConclusionReason ? `Comparison not supported: ${g.withheldConclusionReason}` : g.allowableConclusion}`, "");
       lines.push(`Analyst action: ${g.analystAction}`, "");
-      if (g.trend) lines.push(`Multi-year trend readiness: ${READINESS_LABEL[g.trend.readiness]}. ${g.trend.summary}`, "");
+      if (g.trend) lines.push(`Multi-year trend (separate from the audited year): ${READINESS_LABEL[g.trend.readiness]}. ${g.trend.summary}`, "");
       lines.push("Integrity checks:");
       for (const c of g.checks) {
         lines.push(`- [${c.status}] ${c.title}${c.ticker ? ` (${c.ticker})` : ""}: ${c.finding} ${c.implication}`);

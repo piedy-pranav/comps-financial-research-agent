@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge } from "@/components/audit/integrity-badges";
+import { CheckStatusIcon, CheckStatusLabel, ReadinessBadge, ReadinessLegend } from "@/components/audit/integrity-badges";
 import { AlertIcon, ArrowUpRightIcon, CheckIcon, InfoIcon } from "@/components/ui/icons";
-import { BASIS_LABEL, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
+import { BASIS_LABEL, INTEGRITY_SUBTITLE, INTEGRITY_TITLE, READINESS_LABEL, STATUS_LABEL } from "@/lib/audit/report";
 import type { Readiness, ResearchAuditFinding, ResearchAuditSummary } from "@/lib/audit/types";
 
 const COVERAGE =
   "Integrity checks cover revenue, operating income, operating margin and net income where sufficient evidence is available. Other metrics in this research have not been audited.";
-const NOT_ASSESSED_ANYWHERE = "Not assessed for any metric: accounting-policy and footnote equivalence, revisions and restatements.";
+const NOT_ASSESSED_ANYWHERE = "Not assessed for any metric: accounting-policy and footnote equivalence.";
 
 const STATUS_TEXT: Record<ResearchAuditFinding["status"], string> = {
   COMPARABLE: "text-pos",
@@ -39,9 +39,18 @@ function EvidenceLinks({ urls }: { urls: string[] }) {
   );
 }
 
-// "Operating income, Operating margin (NKE vs UAA)" for the safeguard lines.
+// "Operating income, Operating margin (NKE vs UAA)" for the summary lines.
 function metricList(findings: ResearchAuditFinding[], multiPair: boolean) {
   return findings.map((f) => (multiPair ? `${f.metric} (${f.pair})` : f.metric)).join(", ");
+}
+
+// Why a metric's comparison is not supported: the first sentence of its first failing check, without the
+// "Operating income:" prefix an inherited (margin) check carries.
+function blockReason(f: ResearchAuditFinding): string {
+  const fail = f.checks?.find((c) => c.status === "FAIL");
+  if (!fail) return "the evidence does not support it.";
+  const text = fail.finding.replace(/^(Revenue|Operating income): /, "");
+  return /^.*?\.(?=\s|$)/.exec(text)?.[0] ?? text;
 }
 
 // V2: one audited conclusion (metric x pair) with its readiness, what limits it and what to do next.
@@ -53,13 +62,13 @@ function IntegrityFinding({ f, multiPair }: { f: ResearchAuditFinding; multiPair
   );
   const basis = Object.entries(f.sourceBasis ?? {});
   return (
-    <li className="flex items-start gap-2.5">
-      <ReadinessBadge readiness={f.readiness!} size="sm" />
-      <div className="min-w-0 flex-1 text-[13px] leading-5">
-        <div>
+    <li className="text-[13px] leading-5">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium text-ink">{f.metric}</span>
-          {multiPair && <span className="text-ink-4"> · {f.pair}</span>}
-          <span className={`ml-2 text-xs ${STATUS_TEXT[f.status]}`}>Comparability: {STATUS_LABEL[f.status]}</span>
+          {multiPair && <span className="text-ink-4">· {f.pair}</span>}
+          <ReadinessBadge readiness={f.readiness!} size="sm" />
+          <span className={`text-xs ${STATUS_TEXT[f.status]}`}>Comparability status: {STATUS_LABEL[f.status]}</span>
         </div>
         {f.conclusion && <p className="mt-0.5 text-ink-2">{f.conclusion}</p>}
         {flagged.length > 0 && (
@@ -76,7 +85,7 @@ function IntegrityFinding({ f, multiPair }: { f: ResearchAuditFinding; multiPair
         )}
         {f.trend && (
           <p className="mt-1 text-xs leading-5 text-ink-3">
-            Multi-year trend: <span className="font-medium text-ink-2">{READINESS_LABEL[f.trend.readiness]}</span>
+            Multi-year trend (separate from this year): <span className="font-medium text-ink-2">{READINESS_LABEL[f.trend.readiness]}</span>
             {f.trend.readiness !== "READY" ? ` · ${f.trend.summary}` : ""}
           </p>
         )}
@@ -138,6 +147,7 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
   const sorted = [...audit.findings].sort((a, b) => ORDER[a.readiness ?? "READY"] - ORDER[b.readiness ?? "READY"]);
   const blocked = sorted.filter((f) => f.readiness === "BLOCKED");
   const review = sorted.filter((f) => f.readiness === "REVIEW");
+  const ready = sorted.filter((f) => f.readiness === "READY");
   const trendBlocked = sorted.filter((f) => f.readiness !== "BLOCKED" && f.trend && f.trend.readiness === "BLOCKED");
   const legacyIssues = audit.findings.some((f) => f.status !== "COMPARABLE");
 
@@ -145,10 +155,11 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
     <section aria-label="Financial comparison integrity" className="mt-8 rounded-md border border-line-subtle bg-raised px-4 py-4 sm:px-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-[11px] font-medium uppercase tracking-wider text-ink-3">
-          {v2 ? "Financial comparison integrity" : legacyIssues ? "Comparability cautions" : "Comparability review"}
+          {v2 ? INTEGRITY_TITLE : legacyIssues ? "Comparability cautions" : "Comparability review"}
         </h2>
         <span className="text-xs text-ink-4">Audited period: {audit.auditedPeriod}</span>
       </div>
+      {v2 && <p className="mt-1 text-xs leading-5 text-ink-3">{INTEGRITY_SUBTITLE}</p>}
 
       {audit.status === "unavailable" ? (
         <p className="mt-2 flex items-start gap-2 text-[13px] leading-5 text-ink-2">
@@ -162,29 +173,41 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
 
           {v2 ? (
             <>
-              {(blocked.length > 0 || review.length > 0 || trendBlocked.length > 0) && (
-                <div role="note" className="mt-3 space-y-1 rounded-md border border-line bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
-                  <p className="text-xs text-ink-3">The answer below was written before this review and is not edited by it.</p>
-                  {blocked.length > 0 && (
+              <div role="note" className="mt-3 space-y-1.5 rounded-md border border-line bg-canvas px-3 py-2 text-[13px] leading-5 text-ink-2">
+                {blocked.length > 0 && (
+                  <div>
                     <p>
-                      <span className="font-medium text-neg">Do not rely on</span> its comparison of {metricList(blocked, multiPair)}: the evidence does not support
-                      which company is higher or stronger. The sourced values themselves remain usable.
+                      <span className="font-medium text-neg">Comparison not supported:</span> {metricList(blocked, multiPair)}. The sourced figures are shown,
+                      but do not use them to conclude which company performs better.
                     </p>
-                  )}
-                  {review.length > 0 && (
-                    <p>
-                      <span className="font-medium text-warn">Treat as provisional</span> its comparison of {metricList(review, multiPair)}, with the qualifications
-                      listed.
-                    </p>
-                  )}
-                  {trendBlocked.length > 0 && (
-                    <p>
-                      <span className="font-medium text-neg">Growth across a break in the annual series is not supported</span> for{" "}
-                      {metricList(trendBlocked, multiPair)} (see below). Years on either side of the break remain usable.
-                    </p>
-                  )}
-                </div>
-              )}
+                    <ul className="mt-0.5 list-disc pl-5 text-xs leading-5 text-ink-3">
+                      {blocked.map((f, i) => (
+                        <li key={i}>
+                          {multiPair ? `${f.metric} (${f.pair})` : f.metric}: {blockReason(f)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {review.length > 0 && (
+                  <p>
+                    <span className="font-medium text-warn">{READINESS_LABEL.REVIEW}:</span> {metricList(review, multiPair)}. Read the qualifications below before
+                    drawing conclusions.
+                  </p>
+                )}
+                {ready.length > 0 && (
+                  <p>
+                    <span className="font-medium text-pos">{READINESS_LABEL.READY}:</span> {metricList(ready, multiPair)}, for the audited year.
+                  </p>
+                )}
+                {trendBlocked.length > 0 && (
+                  <p className="border-t border-line-subtle pt-1.5">
+                    <span className="font-medium text-ink">Multi-year growth (separate from the audited year):</span> growth across a break in the annual series is
+                    not supported for {metricList(trendBlocked, multiPair)}. Years on either side of the break remain usable.
+                  </p>
+                )}
+                <p className="text-xs text-ink-4">The research answer above was written before this review and is not edited by it.</p>
+              </div>
               <ul className="mt-3 space-y-3">
                 {sorted.map((f, i) => (
                   <IntegrityFinding key={i} f={f} multiPair={multiPair} />
@@ -203,7 +226,15 @@ export function ComparabilityCautions({ audit }: { audit: ResearchAuditSummary }
         ))}
         {audit.uncheckedMetrics.length > 0 && <p>Not audited in this research: {audit.uncheckedMetrics.join(", ")}.</p>}
         <p>{COVERAGE}</p>
-        {v2 && <p>{NOT_ASSESSED_ANYWHERE} Ready means the listed checks found no issue, not that the companies are economically equivalent.</p>}
+        {v2 && (
+          <>
+            <ReadinessLegend states={audit.findings.map((f) => f.readiness!)} />
+            <p>
+              {NOT_ASSESSED_ANYWHERE} &ldquo;{READINESS_LABEL.READY}&rdquo; means the checks performed found no issue, not that the companies&rsquo; accounting
+              policies are equivalent.
+            </p>
+          </>
+        )}
         {pairs.length > 0 && (
           <p className="flex flex-wrap gap-x-3">
             {pairs.map((p) => (
